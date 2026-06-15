@@ -1,0 +1,15 @@
+python-pptx>=1.0.2
+Pillow>=11.0.0
+networkx>=3.3
+pydantic>=2.11.0
+PyYAML>=6.0.2
+
+# LLM inference
+openai>=1.93.0
+
+# RAG
+faiss-cpu>=1.11.0
+sentence-transformers>=5.0.0
+
+# Utilities
+tqdm>=4.67.1
