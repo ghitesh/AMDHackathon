@@ -1,6 +1,18 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
+@dataclass
+class Container:
+
+    id: str
+    name: str
+    type: str
+    # region
+    # vpc
+    # availability_zone
+    # subnet
+
+    parent_id: str | None = None
 
 @dataclass
 class Node:

@@ -1,56 +1,44 @@
 {
-  "title": "Web Application",
-
-  "nodes": [
-    {
-      "id": "cf",
-      "label": "CloudFront",
-      "service": "CloudFront",
-      "layer": 0
-    },
-    {
-      "id": "alb",
-      "label": "ALB",
-      "service": "ALB",
-      "layer": 1
-    },
-    {
-      "id": "ecs",
-      "label": "ECS",
-      "service": "ECS",
-      "layer": 2
-    },
-    {
-      "id": "rds",
-      "label": "RDS",
-      "service": "RDS",
-      "layer": 3
-    }
-  ],
-
-  "edges": [
-    {
-      "source": "cf",
-      "target": "alb"
-    },
-    {
-      "source": "alb",
-      "target": "ecs"
-    },
-    {
-      "source": "ecs",
-      "target": "rds"
-    }
-  ],
-
   "containers": [
     {
-      "name": "VPC",
-      "children": [
-        "alb",
-        "ecs",
-        "rds"
-      ]
+      "id": "region",
+      "name": "us-east-1",
+      "type": "region"
+    },
+
+    {
+      "id": "vpc",
+      "name": "Production VPC",
+      "type": "vpc",
+      "parent_id": "region"
+    },
+
+    {
+      "id": "az1",
+      "name": "Availability Zone A",
+      "type": "availability_zone",
+      "parent_id": "vpc"
+    },
+
+    {
+      "id": "az2",
+      "name": "Availability Zone B",
+      "type": "availability_zone",
+      "parent_id": "vpc"
+    },
+
+    {
+      "id": "public1",
+      "name": "Public Subnet",
+      "type": "subnet",
+      "parent_id": "az1"
+    },
+
+    {
+      "id": "private1",
+      "name": "Private Subnet",
+      "type": "subnet",
+      "parent_id": "az1"
     }
   ]
 }
