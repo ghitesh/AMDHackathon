@@ -3,6 +3,7 @@ from pathlib import Path
 
 ICON_MAP = {
     "EC2": "Architecture-Group-Icons_04302026/EC2-instance-contents_32.png",
+    #"ECS": "Architecture-Service-Icons_04302026/Arch_Containers/48/Arch_Amazon-ECS-Anywhere_48.png",
     "RDS": "Resource-Icons_04302026/Res_Databases/Res_Amazon-Aurora_Amazon-RDS-Instance_48.png",
     "S3": "Architecture-Service-Icons_04302026/Arch_Storage/48/Arch_Amazon-Simple-Storage-Service_48.png",
     "ALB": "Resource-Icons_04302026/Res_Networking-Content-Delivery/Res_Elastic-Load-Balancing_Network-Load-Balancer_48.png",
