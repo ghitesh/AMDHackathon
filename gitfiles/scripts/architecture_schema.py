@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -8,6 +8,7 @@ class Node:
     label: str
     service: str
     group: str
+    layer: int = 0
 
 
 @dataclass
@@ -17,6 +18,15 @@ class Edge:
 
 
 @dataclass
-class Zone:
+class Container:
     name: str
-    nodes: List[str]
+    children: List[str]
+
+
+@dataclass
+class Architecture:
+    title: str
+    description: str
+    nodes: List[Node]
+    edges: List[Edge]
+    containers: Optional[List[Container]] = None
