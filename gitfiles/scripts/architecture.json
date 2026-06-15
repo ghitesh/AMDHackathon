@@ -1,57 +1,56 @@
 {
-  "title": "3-Tier Web Application",
-
-  "description": "Highly available web application on AWS",
+  "title": "Web Application",
 
   "nodes": [
     {
-      "id": "alb",
-      "label": "Application Load Balancer",
-      "service": "ALB",
-      "group": "public"
+      "id": "cf",
+      "label": "CloudFront",
+      "service": "CloudFront",
+      "layer": 0
     },
-
     {
-      "id": "ec2",
-      "label": "EC2 Auto Scaling",
-      "service": "EC2",
-      "group": "private"
+      "id": "alb",
+      "label": "ALB",
+      "service": "ALB",
+      "layer": 1
     },
-
+    {
+      "id": "ecs",
+      "label": "ECS",
+      "service": "ECS",
+      "layer": 2
+    },
     {
       "id": "rds",
-      "label": "Amazon RDS",
+      "label": "RDS",
       "service": "RDS",
-      "group": "database"
+      "layer": 3
     }
   ],
 
   "edges": [
     {
-      "source": "alb",
-      "target": "ec2"
+      "source": "cf",
+      "target": "alb"
     },
-
     {
-      "source": "ec2",
+      "source": "alb",
+      "target": "ecs"
+    },
+    {
+      "source": "ecs",
       "target": "rds"
     }
   ],
 
-  "zones": [
+  "containers": [
     {
-      "name": "Public Subnet",
-      "nodes": ["alb"]
-    },
-
-    {
-      "name": "Private Subnet",
-      "nodes": ["ec2"]
-    },
-
-    {
-      "name": "Database Subnet",
-      "nodes": ["rds"]
+      "name": "VPC",
+      "children": [
+        "alb",
+        "ecs",
+        "rds"
+      ]
     }
   ]
 }
