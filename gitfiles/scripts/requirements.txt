@@ -3,6 +3,7 @@ Pillow>=11.0.0
 networkx>=3.3
 pydantic>=2.11.0
 PyYAML>=6.0.2
+pygraphviz>1.13
 
 # LLM inference
 openai>=1.93.0

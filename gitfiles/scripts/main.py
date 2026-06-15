@@ -10,7 +10,7 @@ with open("architecture.json") as f:
     architecture = json.load(f)
 
 positions = calculate_positions(
-    architecture["nodes"]
+    architecture
 )
 
 render_png(
