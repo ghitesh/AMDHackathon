@@ -1,5 +1,10 @@
 from pptx import Presentation
 from pptx.util import Inches
+from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+
+
+ICON_SIZE = 0.8
 
 
 def build_ppt(
@@ -14,6 +19,54 @@ def build_ppt(
         prs.slide_layouts[6]
     )
 
+    node_shapes = {}
+
+    # ------------------------------------------------
+    # Draw containers first
+    # ------------------------------------------------
+
+    for container in architecture.get(
+        "containers",
+        []
+    ):
+
+        nodes = container["children"]
+
+        xs = []
+        ys = []
+
+        for node_id in nodes:
+
+            pos = positions[node_id]
+
+            xs.append(pos["x"])
+            ys.append(pos["y"])
+
+        left = min(xs) - 0.5
+        top = min(ys) - 0.5
+
+        width = (
+            max(xs) - min(xs)
+        ) + 2.0
+
+        height = (
+            max(ys) - min(ys)
+        ) + 2.0
+
+        box = slide.shapes.add_shape(
+            MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+            Inches(left),
+            Inches(top),
+            Inches(width),
+            Inches(height)
+        )
+
+        box.text = container["name"]
+
+    # ------------------------------------------------
+    # Draw nodes
+    # ------------------------------------------------
+
     for node in architecture["nodes"]:
 
         pos = positions[node["id"]]
@@ -23,18 +76,54 @@ def build_ppt(
         )
 
         if icon:
-            slide.shapes.add_picture(
+
+            picture = slide.shapes.add_picture(
                 str(icon),
                 Inches(pos["x"]),
                 Inches(pos["y"]),
-                width=Inches(0.8)
+                width=Inches(ICON_SIZE)
             )
 
-        slide.shapes.add_textbox(
-            Inches(pos["x"]),
+            node_shapes[node["id"]] = picture
+
+        textbox = slide.shapes.add_textbox(
+            Inches(pos["x"] - 0.3),
             Inches(pos["y"] + 0.8),
-            Inches(1.5),
+            Inches(2),
             Inches(0.3)
-        ).text = node["label"]
+        )
+
+        textbox.text = node["label"]
+
+    # ------------------------------------------------
+    # Draw edges
+    # ------------------------------------------------
+
+    for edge in architecture["edges"]:
+
+        src = node_shapes.get(
+            edge["source"]
+        )
+
+        dst = node_shapes.get(
+            edge["target"]
+        )
+
+        if not src or not dst:
+            continue
+
+        x1 = src.left + src.width / 2
+        y1 = src.top + src.height / 2
+
+        x2 = dst.left + dst.width / 2
+        y2 = dst.top + dst.height / 2
+
+        slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            x1,
+            y1,
+            x2,
+            y2
+        )
 
     prs.save(output_file)
