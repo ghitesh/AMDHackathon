@@ -99,30 +99,30 @@ def build_ppt(
     # Draw edges
     # ------------------------------------------------
 
-for edge in architecture["edges"]:
-
-    src = node_shapes.get(edge["source"])
-    dst = node_shapes.get(edge["target"])
-
-    if src is None or dst is None:
-        print(f"Skipping edge {edge}")
-        continue
-
-    x1 = int(src.left + src.width / 2)
-    y1 = int(src.top + src.height / 2)
-
-    x2 = int(dst.left + dst.width / 2)
-    y2 = int(dst.top + dst.height / 2)
-
-    try:
-        slide.shapes.add_connector(
-            MSO_CONNECTOR.STRAIGHT,
-            x1,
-            y1,
-            x2,
-            y2
-        )
-    except Exception as e:
-        print(f"Failed edge {edge}: {e}")
+    for edge in architecture["edges"]:
+    
+        src = node_shapes.get(edge["source"])
+        dst = node_shapes.get(edge["target"])
+    
+        if src is None or dst is None:
+            print(f"Skipping edge {edge}")
+            continue
+    
+        x1 = int(src.left + src.width / 2)
+        y1 = int(src.top + src.height / 2)
+    
+        x2 = int(dst.left + dst.width / 2)
+        y2 = int(dst.top + dst.height / 2)
+    
+        try:
+            slide.shapes.add_connector(
+                MSO_CONNECTOR.STRAIGHT,
+                x1,
+                y1,
+                x2,
+                y2
+            )
+        except Exception as e:
+            print(f"Failed edge {edge}: {e}")
 
     prs.save(output_file)
