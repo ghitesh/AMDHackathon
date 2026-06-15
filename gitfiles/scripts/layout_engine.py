@@ -1,29 +1,64 @@
 from collections import defaultdict
+import networkx as nx
 
 
-LAYER_X_SPACING = 3.0
-LAYER_Y_SPACING = 1.8
+def calculate_positions(architecture):
+    """
+    Calculate node positions using Graphviz.
+    
+    Returns:
+        {
+            "node_id": {
+                "x": float,
+                "y": float
+            }
+        }
+    """
 
+    G = nx.DiGraph()
 
-def calculate_positions(nodes):
+    # Add nodes
+    for node in architecture["nodes"]:
+        G.add_node(node["id"])
 
-    layers = defaultdict(list)
+    # Add edges
+    for edge in architecture["edges"]:
+        G.add_edge(
+            edge["source"],
+            edge["target"]
+        )
 
-    for node in nodes:
-        layer = node.get("layer", 0)
-        layers[layer].append(node)
+    try:
+        from networkx.drawing.nx_agraph import graphviz_layout
 
+        pos = graphviz_layout(
+            G,
+            prog="dot"
+        )
+
+    except Exception:
+        # Fallback if graphviz unavailable
+        pos = nx.spring_layout(
+            G,
+            seed=42
+        )
+
+    # Normalize coordinates
     positions = {}
 
-    for layer, layer_nodes in layers.items():
+    xs = [v[0] for v in pos.values()]
+    ys = [v[1] for v in pos.values()]
 
-        start_x = 1.0
+    min_x = min(xs)
+    min_y = min(ys)
 
-        for idx, node in enumerate(layer_nodes):
+    scale = 100.0
 
-            positions[node["id"]] = {
-                "x": start_x + idx * LAYER_X_SPACING,
-                "y": 1.0 + layer * LAYER_Y_SPACING
-            }
+    for node_id, (x, y) in pos.items():
+
+        positions[node_id] = {
+            "x": ((x - min_x) / scale) + 1,
+            "y": ((y - min_y) / scale) + 1
+        }
 
     return positions
