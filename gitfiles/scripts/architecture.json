@@ -1,0 +1,57 @@
+{
+  "title": "3-Tier Web Application",
+
+  "description": "Highly available web application on AWS",
+
+  "nodes": [
+    {
+      "id": "alb",
+      "label": "Application Load Balancer",
+      "service": "ALB",
+      "group": "public"
+    },
+
+    {
+      "id": "ec2",
+      "label": "EC2 Auto Scaling",
+      "service": "EC2",
+      "group": "private"
+    },
+
+    {
+      "id": "rds",
+      "label": "Amazon RDS",
+      "service": "RDS",
+      "group": "database"
+    }
+  ],
+
+  "edges": [
+    {
+      "source": "alb",
+      "target": "ec2"
+    },
+
+    {
+      "source": "ec2",
+      "target": "rds"
+    }
+  ],
+
+  "zones": [
+    {
+      "name": "Public Subnet",
+      "nodes": ["alb"]
+    },
+
+    {
+      "name": "Private Subnet",
+      "nodes": ["ec2"]
+    },
+
+    {
+      "name": "Database Subnet",
+      "nodes": ["rds"]
+    }
+  ]
+}
