@@ -1,229 +1,252 @@
+"""
+graphviz_cluster_generator.py
+
+Production-grade AWS Graphviz cluster generator.
+
+Responsibilities:
+- Build nested Graphviz clusters
+- Render AWS hierarchy
+- Enforce AZ balancing
+- Apply AWS styles
+- Generate invisible alignment edges
+- Generate node definitions
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Dict, List
+
 from graphviz import Digraph
 
-from aws_architecture_schema import (
-    Architecture,
-    Container,
-    Node
-)
+from graph_builder import LayoutGraph
+
+
+# ==========================================================
+# AWS Styles
+# ==========================================================
+
+CONTAINER_STYLES = {
+    "region": {
+        "style": "rounded",
+        "color": "#6B7280",
+        "penwidth": "2",
+    },
+    "vpc": {
+        "style": "rounded",
+        "color": "#2563EB",
+        "penwidth": "2",
+    },
+    "availability_zone": {
+        "style": "rounded,dashed",
+        "color": "#9CA3AF",
+        "penwidth": "1.5",
+    },
+    "subnet": {
+        "style": "rounded,filled",
+        "fillcolor": "#F8FAFC",
+        "color": "#CBD5E1",
+        "penwidth": "1",
+    },
+}
 
 
 class GraphvizClusterGenerator:
     """
-    Production-grade AWS container hierarchy builder.
-
-    Creates Graphviz clusters for:
-
-        Region
-          └ VPC
-               └ AZ
-                    └ Subnet
-
-    while preserving node ownership.
+    Generates AWS hierarchy clusters.
     """
 
-    def __init__(self, architecture: Architecture):
+    def __init__(self, graph: LayoutGraph):
 
-        self.arch = architecture
+        self.graph_data = graph
 
-        self.graph = Digraph(
+        self.dot = Digraph(
             "AWS",
             graph_attr={
                 "compound": "true",
                 "newrank": "true",
                 "splines": "ortho",
-                "ranksep": "1.2",
+                "rankdir": "TB",
                 "nodesep": "0.8",
-                "pad": "0.4"
-            }
+                "ranksep": "1.2",
+                "pad": "0.4",
+            },
         )
-
-        self.container_map = {
-            c.id: c
-            for c in architecture.containers
-        }
 
         self.children = self._build_container_tree()
 
-    # ---------------------------------------------------------
+    # ======================================================
     # Public API
-    # ---------------------------------------------------------
+    # ======================================================
 
     def build(self) -> Digraph:
 
+        self._configure_graph()
+
         roots = [
-            c for c in self.arch.containers
+            c
+            for c in self.graph_data.containers.values()
             if c.parent_id is None
         ]
 
-        for root in roots:
-            self._render_container(root, self.graph)
+        for container in roots:
+            self._render_container(
+                container,
+                self.dot,
+            )
 
-        return self.graph
+        self._render_orphan_nodes()
 
-    # ---------------------------------------------------------
-    # Tree Construction
-    # ---------------------------------------------------------
+        self._render_edges()
+
+        self._create_layer_ranks()
+
+        return self.dot
+
+    # ======================================================
+    # Graph Config
+    # ======================================================
+
+    def _configure_graph(self):
+
+        self.dot.attr(
+            "node",
+            shape="box",
+            width="1.0",
+            height="1.0",
+            fixedsize="false",
+            fontsize="10",
+        )
+
+        self.dot.attr(
+            "edge",
+            arrowsize="0.8",
+            penwidth="1.2",
+        )
+
+    # ======================================================
+    # Container Tree
+    # ======================================================
 
     def _build_container_tree(self):
 
-        tree = {}
+        tree = defaultdict(list)
 
-        for c in self.arch.containers:
-            tree[c.id] = []
+        for container in self.graph_data.containers.values():
 
-        for c in self.arch.containers:
-
-            if c.parent_id:
-                tree[c.parent_id].append(c)
+            if container.parent_id:
+                tree[container.parent_id].append(container)
 
         return tree
 
-    # ---------------------------------------------------------
-    # Container Rendering
-    # ---------------------------------------------------------
+    # ======================================================
+    # Containers
+    # ======================================================
 
     def _render_container(
         self,
-        container: Container,
-        parent_graph
+        container,
+        parent_graph,
     ):
 
         cluster_name = f"cluster_{container.id}"
 
-        with parent_graph.subgraph(name=cluster_name) as sub:
+        with parent_graph.subgraph(
+            name=cluster_name
+        ) as sub:
 
-            self._apply_cluster_style(
+            self._apply_style(
                 sub,
-                container
+                container.type,
             )
 
-            self._add_container_label(
-                sub,
-                container
+            sub.attr(
+                label=container.name,
+                fontsize="16",
+                fontname="Arial",
             )
 
-            self._add_nodes(
+            self._render_nodes(
                 sub,
-                container.id
+                container.id,
             )
 
-            for child in self.children.get(container.id, []):
-
+            for child in self.children.get(
+                container.id,
+                [],
+            ):
                 self._render_container(
                     child,
-                    sub
+                    sub,
                 )
 
-            self._add_alignment_guides(
+            self._align_children(
                 sub,
-                container
+                container.id,
             )
 
-    # ---------------------------------------------------------
-    # Node Placement
-    # ---------------------------------------------------------
+    # ======================================================
+    # Nodes
+    # ======================================================
 
-    def _add_nodes(
+    def _render_nodes(
         self,
         graph,
-        container_id
+        container_id,
     ):
 
-        nodes = [
-            n for n in self.arch.nodes
-            if n.container_id == container_id
-        ]
+        for node in self.graph_data.nodes.values():
 
-        for node in nodes:
+            if node.container_id != container_id:
+                continue
 
             graph.node(
                 node.id,
                 label=node.label,
-                shape="box",
-                width="1.0",
-                height="1.0"
             )
 
-    # ---------------------------------------------------------
-    # AWS Styling
-    # ---------------------------------------------------------
+    def _render_orphan_nodes(self):
 
-    def _apply_cluster_style(
+        for node in self.graph_data.nodes.values():
+
+            if node.container_id:
+                continue
+
+            self.dot.node(
+                node.id,
+                label=node.label,
+            )
+
+    # ======================================================
+    # Styling
+    # ======================================================
+
+    def _apply_style(
         self,
         graph,
-        container: Container
-    ):
-
-        styles = {
-
-            "region": {
-                "labeljust": "l",
-                "style": "rounded",
-                "color": "#6B7280",
-                "penwidth": "2"
-            },
-
-            "vpc": {
-                "style": "rounded",
-                "color": "#3B82F6",
-                "penwidth": "2"
-            },
-
-            "availability_zone": {
-                "style": "rounded,dashed",
-                "color": "#9CA3AF",
-                "penwidth": "1.5"
-            },
-
-            "subnet": {
-                "style": "filled,rounded",
-                "fillcolor": "#F9FAFB",
-                "color": "#D1D5DB"
-            }
-        }
-
-        cfg = styles.get(container.type, {})
-
-        graph.attr(**cfg)
-
-    # ---------------------------------------------------------
-    # Labels
-    # ---------------------------------------------------------
-
-    def _add_container_label(
-        self,
-        graph,
-        container
+        container_type,
     ):
 
         graph.attr(
-            label=container.name,
-            fontsize="18",
-            fontname="Arial Bold"
+            **CONTAINER_STYLES.get(
+                container_type,
+                {}
+            )
         )
 
-    # ---------------------------------------------------------
-    # Alignment Rules
-    # ---------------------------------------------------------
+    # ======================================================
+    # Alignment
+    # ======================================================
 
-    def _add_alignment_guides(
+    def _align_children(
         self,
         graph,
-        container
+        container_id,
     ):
-        """
-        AWS diagrams rely heavily on
-        invisible alignment edges.
-
-        Example:
-
-            Public-AZ1 ---- Public-AZ2
-            Private-AZ1 --- Private-AZ2
-        """
 
         children = self.children.get(
-            container.id,
-            []
+            container_id,
+            [],
         )
 
         if len(children) < 2:
@@ -234,9 +257,59 @@ class GraphvizClusterGenerator:
             children[1:]
         ):
 
-            graph.edge(
-                f"anchor_{left.id}",
-                f"anchor_{right.id}",
+            anchor_a = f"align_{left.id}"
+            anchor_b = f"align_{right.id}"
+
+            graph.node(
+                anchor_a,
                 style="invis",
-                weight="100"
+                width="0",
+                height="0",
+            )
+
+            graph.node(
+                anchor_b,
+                style="invis",
+                width="0",
+                height="0",
+            )
+
+            graph.edge(
+                anchor_a,
+                anchor_b,
+                style="invis",
+                weight="100",
+            )
+
+    # ======================================================
+    # Layer Ranks
+    # ======================================================
+
+    def _create_layer_ranks(self):
+
+        grouped = defaultdict(list)
+
+        for node_id, layer in self.graph_data.layers.items():
+            grouped[layer].append(node_id)
+
+        for nodes in grouped.values():
+
+            with self.dot.subgraph() as rank:
+
+                rank.attr(rank="same")
+
+                for node_id in nodes:
+                    rank.node(node_id)
+
+    # ======================================================
+    # Edges
+    # ======================================================
+
+    def _render_edges(self):
+
+        for edge in self.graph_data.edges:
+
+            self.dot.edge(
+                edge.source,
+                edge.target,
             )
