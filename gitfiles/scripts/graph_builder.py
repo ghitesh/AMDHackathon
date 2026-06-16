@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Set
 
-from aws_architecture_schema import (
+from architecture_schema import (
     Architecture,
     Node,
     Edge,

@@ -32,7 +32,7 @@ from graphviz_xdot_parser import (
     GraphvizXDotParser,
 )
 
-from aws_architecture_schema import (
+from architecture_schema import (
     Architecture,
 )
 
