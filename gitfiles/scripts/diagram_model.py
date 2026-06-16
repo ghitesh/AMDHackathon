@@ -27,6 +27,8 @@ class DiagramNode:
     width: float
     height: float
 
+    service: str | None = None
+
     attrs: Dict = field(default_factory=dict)
 
 

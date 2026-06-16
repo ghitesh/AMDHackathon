@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 @dataclass
@@ -12,7 +12,7 @@ class Container:
     # availability_zone
     # subnet
 
-    parent_id: str | None = None
+    parent_id: Optional[str] = None
 
 @dataclass
 class Node:
@@ -34,7 +34,9 @@ class Architecture:
     description: str
     nodes: List[Node]
     edges: List[Edge]
-    containers: Optional[List[Container]] = None
+    containers: Optional[List[Container]] = field(
+        default_factory=list
+    )
 
     @classmethod
     def model_validate(cls, data):
