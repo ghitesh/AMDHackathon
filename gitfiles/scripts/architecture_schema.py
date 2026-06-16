@@ -28,7 +28,6 @@ class Edge:
     source: str
     target: str
 
-
 @dataclass
 class Architecture:
     title: str
@@ -36,3 +35,23 @@ class Architecture:
     nodes: List[Node]
     edges: List[Edge]
     containers: Optional[List[Container]] = None
+
+    @classmethod
+    def model_validate(cls, data):
+
+        return cls(
+            title=data.get("title", ""),
+            description=data.get("description", ""),
+            nodes=[
+                Node(**n)
+                for n in data.get("nodes", [])
+            ],
+            edges=[
+                Edge(**e)
+                for e in data.get("edges", [])
+            ],
+            containers=[
+                Container(**c)
+                for c in data.get("containers", [])
+            ]
+        )
