@@ -1,44 +1,123 @@
 {
+  "title": "Multi-AZ Web Application",
+  "description": "Reference AWS architecture",
+
   "containers": [
     {
-      "id": "region",
+      "id": "region1",
       "name": "us-east-1",
-      "type": "region"
+      "type": "region",
+      "parent_id": null
     },
-
     {
-      "id": "vpc",
+      "id": "vpc1",
       "name": "Production VPC",
       "type": "vpc",
-      "parent_id": "region"
+      "parent_id": "region1"
     },
 
     {
       "id": "az1",
       "name": "Availability Zone A",
       "type": "availability_zone",
-      "parent_id": "vpc"
+      "parent_id": "vpc1"
     },
-
     {
       "id": "az2",
       "name": "Availability Zone B",
       "type": "availability_zone",
-      "parent_id": "vpc"
+      "parent_id": "vpc1"
     },
 
     {
-      "id": "public1",
-      "name": "Public Subnet",
+      "id": "public_a",
+      "name": "Public Subnet A",
+      "type": "subnet",
+      "parent_id": "az1"
+    },
+    {
+      "id": "private_a",
+      "name": "Private Subnet A",
       "type": "subnet",
       "parent_id": "az1"
     },
 
     {
-      "id": "private1",
-      "name": "Private Subnet",
+      "id": "public_b",
+      "name": "Public Subnet B",
       "type": "subnet",
-      "parent_id": "az1"
+      "parent_id": "az2"
+    },
+    {
+      "id": "private_b",
+      "name": "Private Subnet B",
+      "type": "subnet",
+      "parent_id": "az2"
+    }
+  ],
+
+  "nodes": [
+    {
+      "id": "cf",
+      "label": "CloudFront",
+      "service": "CloudFront",
+      "container_id": null,
+      "layer": 0
+    },
+
+    {
+      "id": "alb",
+      "label": "Application Load Balancer",
+      "service": "ALB",
+      "container_id": "public_a",
+      "layer": 1
+    },
+
+    {
+      "id": "ecs_a",
+      "label": "ECS Service A",
+      "service": "ECS",
+      "container_id": "private_a",
+      "layer": 2
+    },
+
+    {
+      "id": "ecs_b",
+      "label": "ECS Service B",
+      "service": "ECS",
+      "container_id": "private_b",
+      "layer": 2
+    },
+
+    {
+      "id": "rds",
+      "label": "Aurora",
+      "service": "Aurora",
+      "container_id": "private_a",
+      "layer": 3
+    }
+  ],
+
+  "edges": [
+    {
+      "source": "cf",
+      "target": "alb"
+    },
+    {
+      "source": "alb",
+      "target": "ecs_a"
+    },
+    {
+      "source": "alb",
+      "target": "ecs_b"
+    },
+    {
+      "source": "ecs_a",
+      "target": "rds"
+    },
+    {
+      "source": "ecs_b",
+      "target": "rds"
     }
   ]
 }
