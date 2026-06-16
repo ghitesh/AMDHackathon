@@ -22,6 +22,7 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
+from dataclasses import asdict
 
 from graph_builder import GraphBuilder
 from graphviz_cluster_generator import (
