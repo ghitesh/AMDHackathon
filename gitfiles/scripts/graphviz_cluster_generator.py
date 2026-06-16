@@ -131,7 +131,7 @@ class GraphvizClusterGenerator:
     # Container Tree
     # ======================================================
 
-    def _build_container_tree_deletethis(self):
+    def _build_container_tree(self):
 
         tree = defaultdict(list)
 

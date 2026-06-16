@@ -94,6 +94,11 @@ class GraphvizLayoutEngine:
             ).build()
         )
 
+        # Path("debug_graphviz.dot").write_text(
+        #     dot_graph.source,
+        #     encoding="utf-8"
+        # )
+
         xdot = self._render_xdot(
             dot_graph
         )
@@ -101,6 +106,12 @@ class GraphvizLayoutEngine:
         diagram = self.parser.parse(
             xdot
         )
+
+    
+        # Path("debug.xdot").write_text(
+        #     xdot,
+        #     encoding="utf-8"
+        # )
 
         self._merge_node_metadata(
             architecture,
@@ -111,6 +122,16 @@ class GraphvizLayoutEngine:
             cache_key,
             xdot,
         )
+
+        for c in diagram.containers:
+
+            print( "line 128",
+                c.id,
+                c.bbox.x,
+                c.bbox.y,
+                c.bbox.width,
+                c.bbox.height
+            )
 
         return diagram
 

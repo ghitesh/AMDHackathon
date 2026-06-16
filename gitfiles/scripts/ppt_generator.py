@@ -98,37 +98,60 @@ class PowerPointRenderer:
         slide,
         diagram,
     ):
-
+    
         for node in diagram.nodes:
-
-            print("ppt_generator:105 node.service=",node.service)
-            icon_path = self._resolve_icon(
-                
-                node.service
+    
+            # Skip Graphviz helper nodes
+    
+            if (
+                node.id.startswith("layer_")
+                or node.id.startswith("align_")
+                or ";" in node.id
+            ):
+                continue
+    
+            print(
+                "ppt_generator:105 node.service=",
+                getattr(node, "service", None)
             )
-
+    
+            icon_path = self._resolve_icon(
+                getattr(node, "service", None)
+            )
+    
+            left = int(
+                node.x - (node.width / 2)
+            )
+    
+            top = int(
+                node.y - (node.height / 2)
+            )
+    
+            width = int(node.width)
+            height = int(node.height)
+    
             if icon_path:
-
+    
                 shape = slide.shapes.add_picture(
                     str(icon_path),
-                    int(node.x),
-                    int(node.y),
-                    width=int(node.width),
-                    height=int(node.height),
+                    left,
+                    top,
+                    width=width,
+                    height=height,
                 )
-
+    
             else:
-
+    
                 shape = slide.shapes.add_shape(
                     MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
-                    int(node.x),
-                    int(node.y),
-                    int(node.width),
-                    int(node.height),
+                    left,
+                    top,
+                    width,
+                    height,
                 )
-
+    
             self.node_shapes[node.id] = shape
-
+    
             self._render_node_label(
                 slide,
                 node,
@@ -185,18 +208,30 @@ class PowerPointRenderer:
         slide,
         node,
     ):
-
+    
         label_height = 250000
-
+    
+        left = int(
+            node.x - (node.width / 2)
+        )
+    
+        top = int(
+            node.y + (node.height / 2)
+        )
+    
+        width = int(
+            max(node.width, 800000)
+        )
+    
         textbox = slide.shapes.add_textbox(
-            int(node.x),
-            int(node.y + node.height),
-            int(max(node.width, 500000)),
+            left,
+            top,
+            width,
             label_height,
         )
-
+    
         textbox.text = node.label
-
+    
     # =====================================================
     # Edges
     # =====================================================

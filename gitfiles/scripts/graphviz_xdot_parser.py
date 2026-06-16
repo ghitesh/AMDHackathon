@@ -84,6 +84,7 @@ class GraphvizXDotParser:
                 if node:
                     nodes.append(node)
 
+        # print(    "CONTAINERS:",    len(containers) )
         return DiagramModel(
             width=width,
             height=height,
@@ -170,8 +171,22 @@ class GraphvizXDotParser:
 
         try:
 
-            node_id = stmt.split("[")[0].strip()
+            #node_id = stmt.split("[")[0].strip()
 
+            node_id = stmt.split("[")[0].strip()
+            
+            # Ignore malformed rank-group statements
+            if ";" in node_id:
+                return None
+            
+            # Ignore invisible layer anchors
+            if node_id.startswith("layer_"):
+                return None
+            
+            # Ignore alignment helpers
+            if node_id.startswith("align_"):
+                return None
+    
             if (
                 not node_id
                 or node_id.startswith("align_")
@@ -363,6 +378,8 @@ class GraphvizXDotParser:
             float,
             bbox_match.groups()
         )
+
+        print( "CLUSTER FOUND:", cluster_id )
 
         return DiagramContainer(
             id=cluster_id,

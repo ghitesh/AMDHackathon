@@ -25,10 +25,38 @@ def generate_ppt(
 
     layout_engine = GraphvizLayoutEngine()
 
+    
+    # layout_engine.export_dot(
+    #     architecture,
+    #     "debug.dot"
+    # )
+
     diagram = layout_engine.layout(
         architecture
     )
 
+    print("\n=== DIAGRAM NODES ===")
+    
+    for n in diagram.nodes:
+        print(
+            n.id,
+            n.x,
+            n.y,
+            n.width,
+            n.height
+        )
+    
+    print("\n=== DIAGRAM CONTAINERS ===")
+    
+    for c in diagram.containers:
+        print(
+            c.id,
+            c.bbox.x,
+            c.bbox.y,
+            c.bbox.width,
+            c.bbox.height
+        )
+    
     normalizer = CoordinateNormalizer(
         NormalizationConfig(
             slide_width_emu=prs.slide_width,
@@ -40,6 +68,28 @@ def generate_ppt(
         diagram
     )
 
+    print("\n=== DIAGRAM NODES AFTER===")
+    
+    for n in diagram.nodes:
+        print(
+            n.id,
+            n.x,
+            n.y,
+            n.width,
+            n.height
+        )
+    
+    print("\n=== DIAGRAM CONTAINERS AFTER ===")
+    
+    for c in diagram.containers:
+        print(
+            c.id,
+            c.bbox.x,
+            c.bbox.y,
+            c.bbox.width,
+            c.bbox.height
+        )
+    
     icon_registry = AwsIconRegistry(
         catalog_path = "aws_icon_catalog.json",
         icon_root = "/workspace/shared/aws_icons"
