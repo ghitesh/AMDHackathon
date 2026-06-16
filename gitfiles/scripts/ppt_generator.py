@@ -22,10 +22,10 @@ class PowerPointRenderer:
     def __init__(
         self,
         prs: Presentation,
-        icon_mapper=None,
+        icon_registry=None,
     ):
         self.prs = prs
-        self.icon_mapper = icon_mapper
+        self.icon_registry = icon_registry
         self.node_shapes = {}
 
     # =====================================================

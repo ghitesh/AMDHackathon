@@ -12,6 +12,7 @@ from coordinate_normalizer import (
     CoordinateNormalizer,
     NormalizationConfig,
 )
+from aws_icon_registry import AwsIconRegistry
 from ppt_generator import PowerPointRenderer
 
 
@@ -39,9 +40,14 @@ def generate_ppt(
         diagram
     )
 
+    icon_registry = AwsIconRegistry(
+        catalog_path = "aws_icon_catalog.json",
+        icon_root = "/workspace/shared/aws_icons"
+    )
+
     renderer = PowerPointRenderer(
         prs,
-        icon_mapper
+        icon_registry
     )
 
     renderer.render(
