@@ -101,7 +101,9 @@ class PowerPointRenderer:
 
         for node in diagram.nodes:
 
+            print("ppt_generator:105 node.service=",node.service)
             icon_path = self._resolve_icon(
+                
                 node.service
             )
 
@@ -136,28 +138,46 @@ class PowerPointRenderer:
         self,
         service: Optional[str],
     ):
-
+    
         if (
             not service
-            or not self.icon_mapper
+            or not self.icon_registry
         ):
-            return None
-
-        try:
-
-            path = self.icon_mapper(
+            print(
+                "ppt_generator.py:147 missing service or registry:",
                 service
             )
-
+            return None
+    
+        try:
+    
+            path = self.icon_registry.get_icon(
+                service
+            )
+    
+            print(
+                f"ICON LOOKUP service={service} path={path}"
+            )
+    
             if (
                 path
                 and Path(path).exists()
             ):
+                print(
+                    f"ICON FOUND service={service}"
+                )
                 return path
-
-        except Exception:
-            pass
-
+    
+            print(
+                f"ICON MISSING service={service} path={path}"
+            )
+    
+        except Exception as ex:
+    
+            print(
+                f"ICON LOOKUP ERROR service={service}: {ex}"
+            )
+    
         return None
 
     def _render_node_label(
@@ -248,10 +268,10 @@ class PowerPointRenderer:
 
 def build_ppt(
     prs: Presentation,
-    icon_mapper=None,
+    icon_registry=None,
 ):
 
     return PowerPointRenderer(
         prs,
-        icon_mapper,
+        icon_registry,
     )

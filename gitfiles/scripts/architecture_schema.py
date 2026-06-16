@@ -3,15 +3,13 @@ from typing import List, Optional
 
 @dataclass
 class Container:
-
     id: str
     name: str
     type: str
-    # region
-    # vpc
-    # availability_zone
-    # subnet
-
+    region: Optional[str] = None
+    vpc: Optional[str] = None
+    availability_zone: Optional[str] = None
+    subnet: Optional[str] = None
     parent_id: Optional[str] = None
 
 @dataclass
@@ -34,7 +32,7 @@ class Architecture:
     description: str
     nodes: List[Node]
     edges: List[Edge]
-    containers: Optional[List[Container]] = field(
+    containers: List[Container] = field(
         default_factory=list
     )
 

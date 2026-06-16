@@ -12,10 +12,9 @@ from diagram_model import (
 
 class GraphvizXDotParser:
     """
-    Parses Graphviz XDOT output.
+    Parses Graphviz DOT/XDOT output.
 
     Extracts:
-
     - graph size
     - node positions
     - node sizes
@@ -47,36 +46,43 @@ class GraphvizXDotParser:
             width = graph_bbox[2]
             height = graph_bbox[3]
 
-        lines = xdot_data.splitlines()
+        statements = self._build_statements(
+            xdot_data
+        )
 
-        current_cluster = None
+        for stmt in statements:
 
-        for line in lines:
+            stmt = stmt.strip()
 
-            line = line.strip()
+            if not stmt:
+                continue
 
-            if "subgraph cluster_" in line:
+            if "subgraph cluster_" in stmt:
 
                 cluster = self._parse_cluster(
-                    line
+                    stmt
                 )
 
                 if cluster:
                     containers.append(cluster)
 
-            elif "pos=" in line and "->" not in line:
+            elif "->" in stmt:
 
-                node = self._parse_node(line)
-
-                if node:
-                    nodes.append(node)
-
-            elif "->" in line:
-
-                edge = self._parse_edge(line)
+                edge = self._parse_edge(
+                    stmt
+                )
 
                 if edge:
                     edges.append(edge)
+
+            elif "[" in stmt and "pos=" in stmt:
+
+                node = self._parse_node(
+                    stmt
+                )
+
+                if node:
+                    nodes.append(node)
 
         return DiagramModel(
             width=width,
@@ -85,6 +91,44 @@ class GraphvizXDotParser:
             edges=edges,
             containers=containers
         )
+
+    # --------------------------------------------------
+    # Statement Builder
+    # --------------------------------------------------
+
+    def _build_statements(
+        self,
+        xdot_data: str
+    ):
+
+        statements = []
+
+        current = []
+
+        for raw_line in xdot_data.splitlines():
+
+            line = raw_line.strip()
+
+            if not line:
+                continue
+
+            current.append(line)
+
+            if (
+                line.endswith("];")
+                or line == "}"
+            ):
+                statements.append(
+                    " ".join(current)
+                )
+                current = []
+
+        if current:
+            statements.append(
+                " ".join(current)
+            )
+
+        return statements
 
     # --------------------------------------------------
     # Graph
@@ -121,35 +165,47 @@ class GraphvizXDotParser:
 
     def _parse_node(
         self,
-        line
+        stmt
     ):
 
         try:
 
-            node_id = line.split("[")[0].strip()
+            node_id = stmt.split("[")[0].strip()
+
+            if (
+                not node_id
+                or node_id.startswith("align_")
+            ):
+                return None
 
             pos_match = re.search(
                 r'pos="([\d.]+),([\d.]+)"',
-                line
-            )
-
-            width_match = re.search(
-                r'width=([\d.]+)',
-                line
-            )
-
-            height_match = re.search(
-                r'height=([\d.]+)',
-                line
-            )
-
-            label_match = re.search(
-                r'label="([^"]+)"',
-                line
+                stmt
             )
 
             if not pos_match:
                 return None
+
+            width_match = re.search(
+                r'width=([\d.]+)',
+                stmt
+            )
+
+            height_match = re.search(
+                r'height=([\d.]+)',
+                stmt
+            )
+
+            label_match = re.search(
+                r'label="([^"]+)"',
+                stmt
+            )
+
+            if not label_match:
+                label_match = re.search(
+                    r'label=([^,\]]+)',
+                    stmt
+                )
 
             x, y = map(
                 float,
@@ -159,19 +215,26 @@ class GraphvizXDotParser:
             width = (
                 float(width_match.group(1))
                 if width_match
-                else 1
+                else 1.0
             )
 
             height = (
                 float(height_match.group(1))
                 if height_match
-                else 1
+                else 1.0
             )
 
             label = (
-                label_match.group(1)
+                label_match.group(1).strip()
                 if label_match
                 else node_id
+            )
+
+            print(
+                f"PARSED NODE: "
+                f"id={node_id}, "
+                f"label={label}, "
+                f"x={x}, y={y}"
             )
 
             return DiagramNode(
@@ -183,7 +246,12 @@ class GraphvizXDotParser:
                 height=height
             )
 
-        except Exception:
+        except Exception as ex:
+
+            print(
+                f"Failed parsing node: {ex}"
+            )
+
             return None
 
     # --------------------------------------------------
@@ -192,23 +260,26 @@ class GraphvizXDotParser:
 
     def _parse_edge(
         self,
-        line
+        stmt
     ):
 
         try:
 
-            source, rest = line.split(
+            source, rest = stmt.split(
                 "->",
                 1
             )
 
-            target = rest.split("[")[0].strip()
+            target = (
+                rest.split("[")[0]
+                .strip()
+            )
 
             points = []
 
             pos_match = re.search(
                 r'pos="([^"]+)"',
-                line
+                stmt
             )
 
             if pos_match:
@@ -224,6 +295,7 @@ class GraphvizXDotParser:
             )
 
         except Exception:
+
             return None
 
     def _parse_spline(
@@ -233,8 +305,15 @@ class GraphvizXDotParser:
 
         result = []
 
-        pos = pos.replace("e,", "")
-        pos = pos.replace("s,", "")
+        pos = pos.replace(
+            "e,",
+            ""
+        )
+
+        pos = pos.replace(
+            "s,",
+            ""
+        )
 
         coords = re.findall(
             r'([\d.]+),([\d.]+)',
@@ -258,21 +337,23 @@ class GraphvizXDotParser:
 
     def _parse_cluster(
         self,
-        line
+        stmt
     ):
 
         cluster_match = self.CLUSTER_RE.search(
-            line
+            stmt
         )
 
         if not cluster_match:
             return None
 
-        cluster_id = cluster_match.group("id")
+        cluster_id = cluster_match.group(
+            "id"
+        )
 
         bbox_match = re.search(
             r'bb="([\d.]+),([\d.]+),([\d.]+),([\d.]+)"',
-            line
+            stmt
         )
 
         if not bbox_match:

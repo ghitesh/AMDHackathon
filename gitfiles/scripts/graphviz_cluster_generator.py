@@ -73,6 +73,7 @@ class GraphvizClusterGenerator:
             },
         )
 
+        #self.graph_data.container_children
         self.children = self._build_container_tree()
 
     # ======================================================
@@ -97,9 +98,11 @@ class GraphvizClusterGenerator:
 
         self._render_orphan_nodes()
 
+        self._render_rank_groups()
+
         self._render_edges()
 
-        self._create_layer_ranks()
+        self._create_layer_structure()
 
         return self.dot
 
@@ -128,7 +131,7 @@ class GraphvizClusterGenerator:
     # Container Tree
     # ======================================================
 
-    def _build_container_tree(self):
+    def _build_container_tree_deletethis(self):
 
         tree = defaultdict(list)
 
@@ -188,22 +191,26 @@ class GraphvizClusterGenerator:
     # ======================================================
     # Nodes
     # ======================================================
-
     def _render_nodes(
         self,
         graph,
         container_id,
     ):
-
-        for node in self.graph_data.nodes.values():
-
-            if node.container_id != container_id:
-                continue
-
+    
+        node_ids = self.graph_data.container_nodes.get(
+            container_id,
+            []
+        )
+    
+        for node_id in node_ids:
+    
+            node = self.graph_data.nodes[node_id]
+    
             graph.node(
                 node.id,
                 label=node.label,
             )
+        
 
     def _render_orphan_nodes(self):
 
@@ -285,7 +292,7 @@ class GraphvizClusterGenerator:
     # Layer Ranks
     # ======================================================
 
-    def _create_layer_ranks(self):
+    def _create_layer_ranks_deletethis(self):
 
         grouped = defaultdict(list)
 
@@ -313,3 +320,64 @@ class GraphvizClusterGenerator:
                 edge.source,
                 edge.target,
             )
+
+
+    def _render_rank_groups(self):
+    
+        for service, node_ids in (
+            self.graph_data.rank_groups.items()
+        ):
+    
+            if len(node_ids) < 2:
+                continue
+    
+            with self.dot.subgraph() as rank:
+    
+                rank.attr(rank="same")
+    
+                for node_id in node_ids:
+                    rank.node(node_id)
+
+    def _create_layer_structure(self):
+    
+        grouped = defaultdict(list)
+    
+        for node_id, layer in (
+            self.graph_data.layers.items()
+        ):
+            grouped[layer].append(node_id)
+    
+        previous_anchor = None
+    
+        for layer in sorted(grouped):
+    
+            anchor = f"layer_{layer}"
+    
+            self.dot.node(
+                anchor,
+                shape="point",
+                width="0",
+                height="0",
+                style="invis",
+            )
+    
+            with self.dot.subgraph() as rank:
+    
+                rank.attr(rank="same")
+    
+                rank.node(anchor)
+    
+                for node_id in grouped[layer]:
+                    rank.node(node_id)
+    
+            if previous_anchor:
+    
+                self.dot.edge(
+                    previous_anchor,
+                    anchor,
+                    style="invis",
+                    weight="100",
+                )
+    
+            previous_anchor = anchor
+        

@@ -7,7 +7,7 @@ from pathlib import Path
 from collections import defaultdict
 
 
-ICON_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg"}
+ICON_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
 # ============================================================

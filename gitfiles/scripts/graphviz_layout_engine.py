@@ -77,6 +77,11 @@ class GraphvizLayoutEngine:
         )
 
         if cached:
+
+            self._merge_node_metadata(
+                architecture,
+                cached
+            )
             return cached
 
         layout_graph = self.builder.build(
@@ -95,6 +100,11 @@ class GraphvizLayoutEngine:
 
         diagram = self.parser.parse(
             xdot
+        )
+
+        self._merge_node_metadata(
+            architecture,
+            diagram
         )
 
         self._save_cache(
@@ -234,3 +244,41 @@ class GraphvizLayoutEngine:
             xdot,
             encoding="utf-8",
         )
+
+    def _merge_node_metadata(
+        self,
+        architecture: Architecture,
+        diagram: DiagramModel,
+    ):
+    
+        arch_lookup = {
+            node.id: node
+            for node in architecture.nodes
+        }
+    
+        for diagram_node in diagram.nodes:
+    
+            source = arch_lookup.get(
+                diagram_node.id
+            )
+    
+            if not source:
+                continue
+    
+            # Preserve original metadata
+    
+            if hasattr(source, "service"):
+                diagram_node.service = (
+                    source.service
+                )
+    
+            if hasattr(source, "label"):
+                diagram_node.label = (
+                    source.label
+                )
+    
+            print(
+                f"MERGED: "
+                f"{diagram_node.id} -> "
+                f"service={getattr(diagram_node,'service',None)}"
+            )
