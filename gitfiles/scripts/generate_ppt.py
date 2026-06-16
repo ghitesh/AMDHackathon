@@ -1,30 +1,42 @@
-import json
-
-from layout_engine import calculate_positions
-from ppt_generator import build_ppt
-from diagram_renderer import render_png
-from aws_icon_mapper import get_icon
-
-
-with open("architecture.json") as f:
-    architecture = json.load(f)
-
-positions = calculate_positions(
-    architecture
+from graphviz_layout_engine import GraphvizLayoutEngine
+from coordinate_normalizer import (
+    CoordinateNormalizer,
+    NormalizationConfig,
 )
+from ppt_renderer import PowerPointRenderer
 
-render_png(
+from pptx import Presentation
+
+
+def generate_ppt(
     architecture,
-    positions,
-    "outputs/architecture.png"
-)
+    output_file,
+):
+    prs = Presentation()
 
-build_ppt(
-    architecture,
-    positions,
-    lambda svc: get_icon(
-        svc,
-        "/workspace/shared/aws_icons"
-    ),
-    "outputs/final.pptx"
-)
+    layout_engine = GraphvizLayoutEngine()
+
+    diagram = layout_engine.layout(
+        architecture
+    )
+
+    normalizer = CoordinateNormalizer(
+        NormalizationConfig(
+            slide_width_emu=prs.slide_width,
+            slide_height_emu=prs.slide_height,
+        )
+    )
+
+    diagram = normalizer.normalize(
+        diagram
+    )
+
+    renderer = PowerPointRenderer(
+        prs
+    )
+
+    renderer.render(
+        diagram
+    )
+
+    prs.save(output_file)
