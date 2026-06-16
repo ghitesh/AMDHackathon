@@ -167,41 +167,48 @@ class CoordinateNormalizer:
     # -----------------------------------------------------
 
     def _normalize_nodes(
-        self,
-        diagram,
-        graph_height_pts,
-        scale_x,
-        scale_y,
-        offset_x,
-        offset_y,
+            self,
+            diagram,
+            graph_height_pts,
+            scale_x,
+            scale_y,
+            offset_x,
+            offset_y,
     ):
 
         for node in diagram.nodes:
+            width_emu = (
+                    node.width
+                    * EMU_PER_INCH
+                    * scale_x
+            )
 
-            node.x = self._x_transform(
+            height_emu = (
+                    node.height
+                    * EMU_PER_INCH
+                    * scale_y
+            )
+
+            center_x = self._x_transform(
                 node.x,
                 scale_x,
                 offset_x,
             )
 
-            node.y = self._y_transform(
+            center_y = self._y_transform(
                 node.y,
                 graph_height_pts,
                 scale_y,
                 offset_y,
             )
 
-            node.width = (
-                node.width
-                * EMU_PER_INCH
-                * scale_x
-            )
+            node.x = center_x - (width_emu / 2)
 
-            node.height = (
-                node.height
-                * EMU_PER_INCH
-                * scale_y
-            )
+            node.y = center_y - (height_emu / 2)
+
+            node.width = width_emu
+
+            node.height = height_emu
 
     # -----------------------------------------------------
     # Edges

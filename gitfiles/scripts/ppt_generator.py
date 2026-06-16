@@ -131,7 +131,7 @@ class PowerPointRenderer:
             height = int(node.height)
     
             if icon_path:
-    
+                print("ppt_generator:105 icon.path=", icon_path)
                 shape = slide.shapes.add_picture(
                     str(icon_path),
                     left,
