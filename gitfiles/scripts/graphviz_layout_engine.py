@@ -135,7 +135,7 @@ class GraphvizLayoutEngine:
     ):
 
         payload = json.dumps(
-            architecture.model_dump(),
+            asdict(architecture),
             sort_keys=True,
         )
 

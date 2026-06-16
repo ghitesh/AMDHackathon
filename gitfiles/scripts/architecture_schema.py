@@ -19,7 +19,7 @@ class Node:
     id: str
     label: str
     service: str
-    group: str
+    container_id: Optional[str] = None
     layer: int = 0
 
 
@@ -27,12 +27,6 @@ class Node:
 class Edge:
     source: str
     target: str
-
-
-@dataclass
-class Container:
-    name: str
-    children: List[str]
 
 
 @dataclass
