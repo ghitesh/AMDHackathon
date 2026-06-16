@@ -1,76 +1,533 @@
-========File architecture.json=======
+======== File ./ppt_generator.py =========
+from pptx import Presentation
+from pptx.util import Inches
+from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+
+
+ICON_SIZE = 0.8
+
+
+def build_ppt(
+    architecture,
+    positions,
+    icon_mapper,
+    output_file
+):
+    prs = Presentation()
+
+    slide = prs.slides.add_slide(
+        prs.slide_layouts[6]
+    )
+
+    node_shapes = {}
+
+    # ------------------------------------------------
+    # Draw containers first
+    # ------------------------------------------------
+
+    for container in architecture.get(
+        "containers",
+        []
+    ):
+
+        nodes = container["children"]
+
+        xs = []
+        ys = []
+
+        for node_id in nodes:
+
+            pos = positions[node_id]
+
+            xs.append(pos["x"])
+            ys.append(pos["y"])
+
+        left = min(xs) - 0.5
+        top = min(ys) - 0.5
+
+        width = (
+            max(xs) - min(xs)
+        ) + 2.0
+
+        height = (
+            max(ys) - min(ys)
+        ) + 2.0
+
+        box = slide.shapes.add_shape(
+            MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+            Inches(left),
+            Inches(top),
+            Inches(width),
+            Inches(height)
+        )
+
+        box.text = container["name"]
+
+    # ------------------------------------------------
+    # Draw nodes
+    # ------------------------------------------------
+
+    for node in architecture["nodes"]:
+
+        pos = positions[node["id"]]
+
+        icon = icon_mapper(
+            node["service"]
+        )
+
+        if icon:
+
+            picture = slide.shapes.add_picture(
+                str(icon),
+                Inches(pos["x"]),
+                Inches(pos["y"]),
+                width=Inches(ICON_SIZE)
+            )
+
+            node_shapes[node["id"]] = picture
+
+        textbox = slide.shapes.add_textbox(
+            Inches(pos["x"] - 0.3),
+            Inches(pos["y"] + 0.8),
+            Inches(2),
+            Inches(0.3)
+        )
+
+        textbox.text = node["label"]
+
+    # ------------------------------------------------
+    # Draw edges
+    # ------------------------------------------------
+
+    for edge in architecture["edges"]:
+    
+        src = node_shapes.get(edge["source"])
+        dst = node_shapes.get(edge["target"])
+    
+        if src is None or dst is None:
+            print(f"Skipping edge {edge}")
+            continue
+    
+        x1 = int(src.left + src.width / 2)
+        y1 = int(src.top + src.height / 2)
+    
+        x2 = int(dst.left + dst.width / 2)
+        y2 = int(dst.top + dst.height / 2)
+    
+        try:
+            slide.shapes.add_connector(
+                MSO_CONNECTOR.STRAIGHT,
+                x1,
+                y1,
+                x2,
+                y2
+            )
+        except Exception as e:
+            print(f"Failed edge {edge}: {e}")
+
+    prs.save(output_file)
+<<<<EOF>>>>
+======== File ./diagram_model.py =========
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+
+
+@dataclass
+class Point:
+    x: float
+    y: float
+
+
+@dataclass
+class BoundingBox:
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass
+class DiagramNode:
+    id: str
+    label: str
+
+    x: float
+    y: float
+
+    width: float
+    height: float
+
+    attrs: Dict = field(default_factory=dict)
+
+
+@dataclass
+class DiagramEdge:
+    source: str
+    target: str
+
+    points: List[Point] = field(default_factory=list)
+
+    attrs: Dict = field(default_factory=dict)
+
+
+@dataclass
+class DiagramContainer:
+    id: str
+    label: str
+
+    bbox: BoundingBox
+
+    attrs: Dict = field(default_factory=dict)
+
+
+@dataclass
+class DiagramModel:
+
+    width: float
+    height: float
+
+    nodes: List[DiagramNode] = field(default_factory=list)
+
+    edges: List[DiagramEdge] = field(default_factory=list)
+
+    containers: List[DiagramContainer] = field(default_factory=list)
+<<<<EOF>>>>
+======== File ./graph_builder.py =========
+"""
+graph_builder.py
+
+Architecture JSON
+    ->
+Layout Graph
+
+Responsibilities:
+- validate architecture
+- build adjacency maps
+- resolve containers
+- assign layers
+- detect disconnected components
+- prepare Graphviz input
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Dict, List, Set
+
+from aws_architecture_schema import (
+    Architecture,
+    Node,
+    Edge,
+    Container,
+)
+
+
+class LayoutGraph:
+    """
+    Internal graph representation.
+
+    Independent of Graphviz.
+    """
+
+    def __init__(self):
+
+        self.nodes: Dict[str, Node] = {}
+
+        self.edges: List[Edge] = []
+
+        self.containers: Dict[str, Container] = {}
+
+        self.adjacency = defaultdict(set)
+
+        self.reverse_adjacency = defaultdict(set)
+
+        self.layers: Dict[str, int] = {}
+
+        self.roots: Set[str] = set()
+
+
+class GraphBuilder:
+
+    def build(
+        self,
+        architecture: Architecture,
+    ) -> LayoutGraph:
+
+        graph = LayoutGraph()
+
+        self._load_nodes(
+            graph,
+            architecture.nodes
+        )
+
+        self._load_edges(
+            graph,
+            architecture.edges
+        )
+
+        self._load_containers(
+            graph,
+            architecture.containers
+        )
+
+        self._validate(graph)
+
+        self._compute_roots(graph)
+
+        self._assign_layers(graph)
+
+        return graph
+
+    # -------------------------------------------------
+
+    def _load_nodes(
+        self,
+        graph,
+        nodes
+    ):
+
+        for node in nodes:
+            graph.nodes[node.id] = node
+
+    def _load_edges(
+        self,
+        graph,
+        edges
+    ):
+
+        graph.edges.extend(edges)
+
+        for edge in edges:
+
+            graph.adjacency[
+                edge.source
+            ].add(edge.target)
+
+            graph.reverse_adjacency[
+                edge.target
+            ].add(edge.source)
+
+    def _load_containers(
+        self,
+        graph,
+        containers
+    ):
+
+        for c in containers:
+            graph.containers[c.id] = c
+
+    # -------------------------------------------------
+
+    def _validate(self, graph):
+
+        for edge in graph.edges:
+
+            if edge.source not in graph.nodes:
+                raise ValueError(
+                    f"Unknown source {edge.source}"
+                )
+
+            if edge.target not in graph.nodes:
+                raise ValueError(
+                    f"Unknown target {edge.target}"
+                )
+
+    # -------------------------------------------------
+
+    def _compute_roots(self, graph):
+
+        for node_id in graph.nodes:
+
+            if not graph.reverse_adjacency[node_id]:
+                graph.roots.add(node_id)
+
+    # -------------------------------------------------
+
+    def _assign_layers(self, graph):
+
+        visited = set()
+
+        queue = []
+
+        for root in graph.roots:
+
+            graph.layers[root] = 0
+
+            queue.append(root)
+
+        while queue:
+
+            current = queue.pop(0)
+
+            visited.add(current)
+
+            current_layer = graph.layers[current]
+
+            for child in graph.adjacency[current]:
+
+                graph.layers[child] = max(
+                    graph.layers.get(child, 0),
+                    current_layer + 1
+                )
+
+                if child not in visited:
+                    queue.append(child)
+<<<<EOF>>>>
+======== File ./diagram_renderer.py =========
+from PIL import Image
+from PIL import ImageDraw
+
+
+def render_png(
+    architecture,
+    positions,
+    output_file
+):
+    img = Image.new(
+        "RGB",
+        (1600, 900),
+        "white"
+    )
+
+    draw = ImageDraw.Draw(img)
+
+    for edge in architecture["edges"]:
+
+        s = positions[edge["source"]]
+        t = positions[edge["target"]]
+
+        draw.line(
+            (
+                s["x"] * 100,
+                s["y"] * 100,
+                t["x"] * 100,
+                t["y"] * 100
+            ),
+            fill="black",
+            width=3
+        )
+
+    img.save(output_file)
+<<<<EOF>>>>
+======== File ./graphviz_layout_runner.py =========
+import subprocess
+
+
+class GraphvizLayoutRunner:
+
+    def generate_xdot(
+        self,
+        dot_string: str
+    ) -> str:
+
+        result = subprocess.run(
+            ["dot", "-Txdot"],
+            input=dot_string,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        return result.stdout
+<<<<EOF>>>>
+======== File ./examples/architecture.json =========
 {
+  "title": "Multi-AZ Web Application",
+  "description": "Reference AWS architecture",
+
   "containers": [
     {
-      "id": "region",
+      "id": "region1",
       "name": "us-east-1",
-      "type": "region"
+      "type": "region",
+      "parent_id": null
     },
-
     {
-      "id": "vpc",
+      "id": "vpc1",
       "name": "Production VPC",
       "type": "vpc",
-      "parent_id": "region"
+      "parent_id": "region1"
     },
 
     {
       "id": "az1",
       "name": "Availability Zone A",
       "type": "availability_zone",
-      "parent_id": "vpc"
+      "parent_id": "vpc1"
     },
-
     {
       "id": "az2",
       "name": "Availability Zone B",
       "type": "availability_zone",
-      "parent_id": "vpc"
+      "parent_id": "vpc1"
     },
 
     {
-      "id": "public1",
-      "name": "Public Subnet",
+      "id": "public_a",
+      "name": "Public Subnet A",
+      "type": "subnet",
+      "parent_id": "az1"
+    },
+    {
+      "id": "private_a",
+      "name": "Private Subnet A",
       "type": "subnet",
       "parent_id": "az1"
     },
 
     {
-      "id": "private1",
-      "name": "Private Subnet",
+      "id": "public_b",
+      "name": "Public Subnet B",
       "type": "subnet",
-      "parent_id": "az1"
+      "parent_id": "az2"
+    },
+    {
+      "id": "private_b",
+      "name": "Private Subnet B",
+      "type": "subnet",
+      "parent_id": "az2"
     }
-  ]
-}
-<<<EOF>>>
-========File architecture1.json=======
-{
-  "title": "Web Application",
+  ],
 
   "nodes": [
     {
       "id": "cf",
       "label": "CloudFront",
       "service": "CloudFront",
+      "container_id": null,
       "layer": 0
     },
+
     {
       "id": "alb",
-      "label": "ALB",
+      "label": "Application Load Balancer",
       "service": "ALB",
+      "container_id": "public_a",
       "layer": 1
     },
+
     {
-      "id": "ecs",
-      "label": "ECS",
+      "id": "ecs_a",
+      "label": "ECS Service A",
       "service": "ECS",
+      "container_id": "private_a",
       "layer": 2
     },
+
+    {
+      "id": "ecs_b",
+      "label": "ECS Service B",
+      "service": "ECS",
+      "container_id": "private_b",
+      "layer": 2
+    },
+
     {
       "id": "rds",
-      "label": "RDS",
-      "service": "RDS",
+      "label": "Aurora",
+      "service": "Aurora",
+      "container_id": "private_a",
       "layer": 3
     }
   ],
@@ -82,27 +539,40 @@
     },
     {
       "source": "alb",
-      "target": "ecs"
+      "target": "ecs_a"
     },
     {
-      "source": "ecs",
-      "target": "rds"
-    }
-  ],
-
-  "containers": [
+      "source": "alb",
+      "target": "ecs_b"
+    },
     {
-      "name": "VPC",
-      "children": [
-        "alb",
-        "ecs",
-        "rds"
-      ]
+      "source": "ecs_a",
+      "target": "rds"
+    },
+    {
+      "source": "ecs_b",
+      "target": "rds"
     }
   ]
 }
-<<<EOF>>>
-========File architecture_schema.py=======
+<<<<EOF>>>>
+======== File ./aws_icon_mapper.py =========
+# aws_icon_mapper.py
+
+from aws_icon_registry import AwsIconRegistry
+
+_registry = None
+
+
+def get_icon(service, icon_root):
+
+    global _registry
+
+    if _registry is None:
+        _registry = AwsIconRegistry(icon_root)
+
+    return _registry.get_icon(service)<<<<EOF>>>>
+======== File ./architecture_schema.py =========
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -124,7 +594,7 @@ class Node:
     id: str
     label: str
     service: str
-    group: str
+    container_id: Optional[str] = None
     layer: int = 0
 
 
@@ -135,20 +605,677 @@ class Edge:
 
 
 @dataclass
-class Container:
-    name: str
-    children: List[str]
-
-
-@dataclass
 class Architecture:
     title: str
     description: str
     nodes: List[Node]
     edges: List[Edge]
     containers: Optional[List[Container]] = None
-<<<EOF>>>
-========File aws_icon_catalog.json=======
+<<<<EOF>>>>
+======== File ./graphviz_layout_engine.py =========
+"""
+graphviz_layout_engine.py
+
+Production Graphviz Layout Engine.
+
+Pipeline:
+
+Architecture
+    ->
+LayoutGraph
+    ->
+Graphviz DOT
+    ->
+XDOT
+    ->
+DiagramModel
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+
+from graph_builder import GraphBuilder
+from graphviz_cluster_generator import (
+    GraphvizClusterGenerator,
+)
+from graphviz_xdot_parser import (
+    GraphvizXDotParser,
+)
+
+from aws_architecture_schema import (
+    Architecture,
+)
+
+from diagram_model import (
+    DiagramModel,
+)
+
+
+class GraphvizLayoutEngine:
+
+    def __init__(
+        self,
+        cache_dir: str | Path = ".layout_cache",
+    ):
+
+        self.builder = GraphBuilder()
+
+        self.parser = GraphvizXDotParser()
+
+        self.cache_dir = Path(cache_dir)
+
+        self.cache_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+    # ======================================================
+    # Public API
+    # ======================================================
+
+    def layout(
+        self,
+        architecture: Architecture,
+    ) -> DiagramModel:
+
+        cache_key = self._compute_hash(
+            architecture
+        )
+
+        cached = self._load_cache(
+            cache_key
+        )
+
+        if cached:
+            return cached
+
+        layout_graph = self.builder.build(
+            architecture
+        )
+
+        dot_graph = (
+            GraphvizClusterGenerator(
+                layout_graph
+            ).build()
+        )
+
+        xdot = self._render_xdot(
+            dot_graph
+        )
+
+        diagram = self.parser.parse(
+            xdot
+        )
+
+        self._save_cache(
+            cache_key,
+            xdot,
+        )
+
+        return diagram
+
+    # ======================================================
+    # XDOT Rendering
+    # ======================================================
+
+    def _render_xdot(
+        self,
+        dot_graph,
+    ) -> str:
+
+        process = subprocess.run(
+            [
+                "dot",
+                "-Txdot",
+            ],
+            input=dot_graph.source,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        return process.stdout
+
+    # ======================================================
+    # Cache
+    # ======================================================
+
+    def _compute_hash(
+        self,
+        architecture,
+    ):
+
+        payload = json.dumps(
+            asdict(architecture),
+            sort_keys=True,
+        )
+
+        return hashlib.sha256(
+            payload.encode()
+        ).hexdigest()
+
+    def _cache_file(
+        self,
+        cache_key,
+    ):
+
+        return (
+            self.cache_dir
+            / f"{cache_key}.xdot"
+        )
+
+    def _save_cache(
+        self,
+        cache_key,
+        xdot,
+    ):
+
+        self._cache_file(
+            cache_key
+        ).write_text(
+            xdot,
+            encoding="utf-8",
+        )
+
+    def _load_cache(
+        self,
+        cache_key,
+    ):
+
+        file = self._cache_file(
+            cache_key
+        )
+
+        if not file.exists():
+            return None
+
+        return self.parser.parse(
+            file.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    # ======================================================
+    # Debug
+    # ======================================================
+
+    def export_dot(
+        self,
+        architecture,
+        output_file,
+    ):
+
+        graph = self.builder.build(
+            architecture
+        )
+
+        dot = (
+            GraphvizClusterGenerator(
+                graph
+            ).build()
+        )
+
+        Path(output_file).write_text(
+            dot.source,
+            encoding="utf-8",
+        )
+
+    def export_xdot(
+        self,
+        architecture,
+        output_file,
+    ):
+
+        graph = self.builder.build(
+            architecture
+        )
+
+        dot = (
+            GraphvizClusterGenerator(
+                graph
+            ).build()
+        )
+
+        xdot = self._render_xdot(
+            dot
+        )
+
+        Path(output_file).write_text(
+            xdot,
+            encoding="utf-8",
+        )
+<<<<EOF>>>>
+======== File ./layout_pipeline.py =========
+from graphviz_layout_runner import (
+    GraphvizLayoutRunner
+)
+
+from graphviz_xdot_parser import (
+    GraphvizXDotParser
+)
+
+from coordinate_normalizer import (
+    CoordinateNormalizer
+)
+
+
+class LayoutPipeline:
+
+    def run(
+        self,
+        dot_source: str
+    ):
+
+        xdot = (
+            GraphvizLayoutRunner()
+            .generate_xdot(dot_source)
+        )
+
+        diagram = (
+            GraphvizXDotParser()
+            .parse(xdot)
+        )
+
+        diagram = (
+            CoordinateNormalizer()
+            .normalize(diagram)
+        )
+
+        return diagram
+<<<<EOF>>>>
+======== File ./generate_ppt.py =========
+import json
+
+from layout_engine import calculate_positions
+from ppt_generator import build_ppt
+from diagram_renderer import render_png
+from aws_icon_mapper import get_icon
+
+
+with open("architecture.json") as f:
+    architecture = json.load(f)
+
+positions = calculate_positions(
+    architecture
+)
+
+render_png(
+    architecture,
+    positions,
+    "outputs/architecture.png"
+)
+
+build_ppt(
+    architecture,
+    positions,
+    lambda svc: get_icon(
+        svc,
+        "/workspace/shared/aws_icons"
+    ),
+    "outputs/final.pptx"
+)
+<<<<EOF>>>>
+======== File ./build_icon_registry.py =========
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+from collections import defaultdict
+
+
+ICON_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg"}
+
+
+# ============================================================
+# Manual Alias Definitions
+# ============================================================
+
+MANUAL_ALIASES = {
+    "EC2": [
+        "amazon ec2",
+        "elastic compute cloud",
+        "instance",
+    ],
+    "Lambda": [
+        "aws lambda",
+        "lambda function",
+    ],
+    "ECS": [
+        "amazon ecs",
+        "elastic container service",
+    ],
+    "EKS": [
+        "amazon eks",
+        "elastic kubernetes service",
+    ],
+    "S3": [
+        "amazon s3",
+        "simple storage service",
+        "bucket",
+    ],
+    "RDS": [
+        "amazon rds",
+        "relational database service",
+    ],
+    "Aurora": [
+        "amazon aurora",
+    ],
+    "DynamoDB": [
+        "amazon dynamodb",
+    ],
+    "ALB": [
+        "application load balancer",
+        "alb",
+    ],
+    "NLB": [
+        "network load balancer",
+        "nlb",
+    ],
+    "CloudFront": [
+        "cdn",
+    ],
+    "Route53": [
+        "route 53",
+        "dns",
+    ],
+    "VPC": [
+        "virtual private cloud",
+    ],
+    "API Gateway": [
+        "api gateway",
+    ],
+    "SQS": [
+        "queue",
+        "amazon sqs",
+    ],
+    "SNS": [
+        "notification service",
+        "amazon sns",
+    ],
+    "EventBridge": [
+        "event bus",
+    ],
+    "Redshift": [
+        "amazon redshift",
+    ],
+    "OpenSearch": [
+        "elasticsearch",
+        "amazon opensearch",
+    ],
+    "SageMaker": [
+        "amazon sagemaker",
+    ],
+}
+
+
+# ============================================================
+# Service Name Extraction
+# ============================================================
+
+SERVICE_PATTERNS = [
+    ("Amazon-EC2", "EC2"),
+    ("Amazon-Simple-Storage-Service", "S3"),
+    ("Amazon-DynamoDB", "DynamoDB"),
+    ("Amazon-Aurora", "Aurora"),
+    ("Amazon-RDS", "RDS"),
+    ("Amazon-Elastic-Container-Service", "ECS"),
+    ("Amazon-Elastic-Kubernetes-Service", "EKS"),
+    ("Amazon-VPC", "VPC"),
+    ("Amazon-CloudFront", "CloudFront"),
+    ("Amazon-Route-53", "Route53"),
+    ("Amazon-API-Gateway", "API Gateway"),
+    ("AWS-Lambda", "Lambda"),
+    ("Amazon-EventBridge", "EventBridge"),
+    ("Amazon-Simple-Queue-Service", "SQS"),
+    ("Amazon-Simple-Notification-Service", "SNS"),
+    ("Amazon-Redshift", "Redshift"),
+    ("Amazon-OpenSearch-Service", "OpenSearch"),
+    ("Amazon-SageMaker", "SageMaker"),
+]
+
+
+def extract_service_name(filename: str) -> str:
+
+    stem = Path(filename).stem
+
+    for pattern, service in SERVICE_PATTERNS:
+        if pattern in stem:
+            return service
+
+    stem = re.sub(r"^(Res_|Arch_)", "", stem)
+
+    stem = re.sub(
+        r"_(16|32|48|64|128)(@5x)?$",
+        "",
+        stem,
+    )
+
+    tokens = stem.split("_")
+
+    if not tokens:
+        return stem
+
+    return tokens[0]
+
+
+# ============================================================
+# Metadata Extraction
+# ============================================================
+
+def determine_icon_type(path: Path) -> str:
+
+    p = str(path)
+
+    if "Resource-Icons" in p:
+        return "resource"
+
+    if "Architecture-Service-Icons" in p:
+        return "service"
+
+    if "Architecture-Group-Icons" in p:
+        return "group"
+
+    return "unknown"
+
+
+def extract_category(path: Path) -> str:
+
+    for part in path.parts:
+
+        if part.startswith("Res_"):
+            return part
+
+        if part.startswith("Arch_"):
+            return part
+
+    return "Unknown"
+
+
+def extract_size(filename: str):
+
+    m = re.search(
+        r"_(16|24|32|48|64|128)",
+        filename,
+    )
+
+    if m:
+        return int(m.group(1))
+
+    return 0
+
+
+# ============================================================
+# Alias Generation
+# ============================================================
+
+def build_aliases(service: str):
+
+    aliases = {
+        service.lower(),
+        service.replace("-", " ").lower(),
+    }
+
+    aliases.update(
+        MANUAL_ALIASES.get(service, [])
+    )
+
+    return sorted(
+        {
+            a.lower().strip()
+            for a in aliases
+        }
+    )
+
+
+# ============================================================
+# Icon Ranking
+# ============================================================
+
+def score_icon(icon):
+
+    score = 0
+
+    if icon["icon_type"] == "resource":
+        score += 100
+
+    elif icon["icon_type"] == "service":
+        score += 50
+
+    elif icon["icon_type"] == "group":
+        score += 10
+
+    score += icon["size"]
+
+    return score
+
+
+# ============================================================
+# Catalog Builder
+# ============================================================
+
+class IconCatalogBuilder:
+
+    def __init__(self, icon_root):
+
+        self.icon_root = Path(icon_root)
+
+    def build(self):
+
+        services = defaultdict(list)
+
+        for file in self.icon_root.rglob("*"):
+
+            if not file.is_file():
+                continue
+
+            if file.suffix.lower() not in ICON_EXTENSIONS:
+                continue
+
+            service = extract_service_name(
+                file.name
+            )
+
+            icon = {
+                "service": service,
+                "path": str(
+                    file.relative_to(
+                        self.icon_root
+                    )
+                ),
+                "category": extract_category(
+                    file
+                ),
+                "icon_type": determine_icon_type(
+                    file
+                ),
+                "size": extract_size(
+                    file.name
+                ),
+            }
+
+            services[service].append(icon)
+
+        return services
+
+
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--icon-root",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--output",
+        required=True,
+    )
+
+    args = parser.parse_args()
+
+    services = IconCatalogBuilder(
+        args.icon_root
+    ).build()
+
+    preferred = {}
+
+    alias_lookup = {}
+
+    for service, icons in services.items():
+
+        best = max(
+            icons,
+            key=score_icon,
+        )
+
+        aliases = build_aliases(
+            service
+        )
+
+        best["aliases"] = aliases
+
+        preferred[service] = best
+
+        for alias in aliases:
+            alias_lookup[alias] = service
+
+    catalog = {
+        "preferred": preferred,
+        "aliases": alias_lookup,
+    }
+
+    with open(
+        args.output,
+        "w",
+        encoding="utf-8",
+    ) as f:
+
+        json.dump(
+            catalog,
+            f,
+            indent=2,
+        )
+
+    print(
+        f"Generated catalog with "
+        f"{len(preferred)} services"
+    )
+
+
+if __name__ == "__main__":
+    main()<<<<EOF>>>>
+======== File ./aws_icon_catalog.json =========
 {
   "preferred": {
     "Virtual-private-cloud-VPC": {
@@ -4868,24 +5995,622 @@ class Architecture:
     "gear": "Gear",
     "users": "Users"
   }
-}<<<EOF>>>
-========File aws_icon_mapper.py=======
-# aws_icon_mapper.py
+}<<<<EOF>>>>
+======== File ./graphviz_cluster_generator.py =========
+"""
+graphviz_cluster_generator.py
 
-from aws_icon_registry import AwsIconRegistry
+Production-grade AWS Graphviz cluster generator.
 
-_registry = None
+Responsibilities:
+- Build nested Graphviz clusters
+- Render AWS hierarchy
+- Enforce AZ balancing
+- Apply AWS styles
+- Generate invisible alignment edges
+- Generate node definitions
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Dict, List
+
+from graphviz import Digraph
+
+from graph_builder import LayoutGraph
 
 
-def get_icon(service, icon_root):
+# ==========================================================
+# AWS Styles
+# ==========================================================
 
-    global _registry
+CONTAINER_STYLES = {
+    "region": {
+        "style": "rounded",
+        "color": "#6B7280",
+        "penwidth": "2",
+    },
+    "vpc": {
+        "style": "rounded",
+        "color": "#2563EB",
+        "penwidth": "2",
+    },
+    "availability_zone": {
+        "style": "rounded,dashed",
+        "color": "#9CA3AF",
+        "penwidth": "1.5",
+    },
+    "subnet": {
+        "style": "rounded,filled",
+        "fillcolor": "#F8FAFC",
+        "color": "#CBD5E1",
+        "penwidth": "1",
+    },
+}
 
-    if _registry is None:
-        _registry = AwsIconRegistry(icon_root)
 
-    return _registry.get_icon(service)<<<EOF>>>
-========File aws_icon_registry.py=======
+class GraphvizClusterGenerator:
+    """
+    Generates AWS hierarchy clusters.
+    """
+
+    def __init__(self, graph: LayoutGraph):
+
+        self.graph_data = graph
+
+        self.dot = Digraph(
+            "AWS",
+            graph_attr={
+                "compound": "true",
+                "newrank": "true",
+                "splines": "ortho",
+                "rankdir": "TB",
+                "nodesep": "0.8",
+                "ranksep": "1.2",
+                "pad": "0.4",
+            },
+        )
+
+        self.children = self._build_container_tree()
+
+    # ======================================================
+    # Public API
+    # ======================================================
+
+    def build(self) -> Digraph:
+
+        self._configure_graph()
+
+        roots = [
+            c
+            for c in self.graph_data.containers.values()
+            if c.parent_id is None
+        ]
+
+        for container in roots:
+            self._render_container(
+                container,
+                self.dot,
+            )
+
+        self._render_orphan_nodes()
+
+        self._render_edges()
+
+        self._create_layer_ranks()
+
+        return self.dot
+
+    # ======================================================
+    # Graph Config
+    # ======================================================
+
+    def _configure_graph(self):
+
+        self.dot.attr(
+            "node",
+            shape="box",
+            width="1.0",
+            height="1.0",
+            fixedsize="false",
+            fontsize="10",
+        )
+
+        self.dot.attr(
+            "edge",
+            arrowsize="0.8",
+            penwidth="1.2",
+        )
+
+    # ======================================================
+    # Container Tree
+    # ======================================================
+
+    def _build_container_tree(self):
+
+        tree = defaultdict(list)
+
+        for container in self.graph_data.containers.values():
+
+            if container.parent_id:
+                tree[container.parent_id].append(container)
+
+        return tree
+
+    # ======================================================
+    # Containers
+    # ======================================================
+
+    def _render_container(
+        self,
+        container,
+        parent_graph,
+    ):
+
+        cluster_name = f"cluster_{container.id}"
+
+        with parent_graph.subgraph(
+            name=cluster_name
+        ) as sub:
+
+            self._apply_style(
+                sub,
+                container.type,
+            )
+
+            sub.attr(
+                label=container.name,
+                fontsize="16",
+                fontname="Arial",
+            )
+
+            self._render_nodes(
+                sub,
+                container.id,
+            )
+
+            for child in self.children.get(
+                container.id,
+                [],
+            ):
+                self._render_container(
+                    child,
+                    sub,
+                )
+
+            self._align_children(
+                sub,
+                container.id,
+            )
+
+    # ======================================================
+    # Nodes
+    # ======================================================
+
+    def _render_nodes(
+        self,
+        graph,
+        container_id,
+    ):
+
+        for node in self.graph_data.nodes.values():
+
+            if node.container_id != container_id:
+                continue
+
+            graph.node(
+                node.id,
+                label=node.label,
+            )
+
+    def _render_orphan_nodes(self):
+
+        for node in self.graph_data.nodes.values():
+
+            if node.container_id:
+                continue
+
+            self.dot.node(
+                node.id,
+                label=node.label,
+            )
+
+    # ======================================================
+    # Styling
+    # ======================================================
+
+    def _apply_style(
+        self,
+        graph,
+        container_type,
+    ):
+
+        graph.attr(
+            **CONTAINER_STYLES.get(
+                container_type,
+                {}
+            )
+        )
+
+    # ======================================================
+    # Alignment
+    # ======================================================
+
+    def _align_children(
+        self,
+        graph,
+        container_id,
+    ):
+
+        children = self.children.get(
+            container_id,
+            [],
+        )
+
+        if len(children) < 2:
+            return
+
+        for left, right in zip(
+            children[:-1],
+            children[1:]
+        ):
+
+            anchor_a = f"align_{left.id}"
+            anchor_b = f"align_{right.id}"
+
+            graph.node(
+                anchor_a,
+                style="invis",
+                width="0",
+                height="0",
+            )
+
+            graph.node(
+                anchor_b,
+                style="invis",
+                width="0",
+                height="0",
+            )
+
+            graph.edge(
+                anchor_a,
+                anchor_b,
+                style="invis",
+                weight="100",
+            )
+
+    # ======================================================
+    # Layer Ranks
+    # ======================================================
+
+    def _create_layer_ranks(self):
+
+        grouped = defaultdict(list)
+
+        for node_id, layer in self.graph_data.layers.items():
+            grouped[layer].append(node_id)
+
+        for nodes in grouped.values():
+
+            with self.dot.subgraph() as rank:
+
+                rank.attr(rank="same")
+
+                for node_id in nodes:
+                    rank.node(node_id)
+
+    # ======================================================
+    # Edges
+    # ======================================================
+
+    def _render_edges(self):
+
+        for edge in self.graph_data.edges:
+
+            self.dot.edge(
+                edge.source,
+                edge.target,
+            )
+<<<<EOF>>>>
+======== File ./graphviz_xdot_parser.py =========
+import re
+
+from diagram_model import (
+    DiagramModel,
+    DiagramNode,
+    DiagramEdge,
+    DiagramContainer,
+    BoundingBox,
+    Point
+)
+
+
+class GraphvizXDotParser:
+    """
+    Parses Graphviz XDOT output.
+
+    Extracts:
+
+    - graph size
+    - node positions
+    - node sizes
+    - edge splines
+    - cluster bounding boxes
+    """
+
+    CLUSTER_RE = re.compile(
+        r'cluster_(?P<id>[^ ]+)'
+    )
+
+    def parse(
+        self,
+        xdot_data: str
+    ) -> DiagramModel:
+
+        width = 0
+        height = 0
+
+        nodes = []
+        edges = []
+        containers = []
+
+        graph_bbox = self._extract_graph_bbox(
+            xdot_data
+        )
+
+        if graph_bbox:
+            width = graph_bbox[2]
+            height = graph_bbox[3]
+
+        lines = xdot_data.splitlines()
+
+        current_cluster = None
+
+        for line in lines:
+
+            line = line.strip()
+
+            if "subgraph cluster_" in line:
+
+                cluster = self._parse_cluster(
+                    line
+                )
+
+                if cluster:
+                    containers.append(cluster)
+
+            elif "pos=" in line and "->" not in line:
+
+                node = self._parse_node(line)
+
+                if node:
+                    nodes.append(node)
+
+            elif "->" in line:
+
+                edge = self._parse_edge(line)
+
+                if edge:
+                    edges.append(edge)
+
+        return DiagramModel(
+            width=width,
+            height=height,
+            nodes=nodes,
+            edges=edges,
+            containers=containers
+        )
+
+    # --------------------------------------------------
+    # Graph
+    # --------------------------------------------------
+
+    def _extract_graph_bbox(
+        self,
+        xdot
+    ):
+
+        match = re.search(
+            r'bb="([\d.]+),([\d.]+),([\d.]+),([\d.]+)"',
+            xdot
+        )
+
+        if not match:
+            return None
+
+        x0, y0, x1, y1 = map(
+            float,
+            match.groups()
+        )
+
+        return (
+            x0,
+            y0,
+            x1 - x0,
+            y1 - y0
+        )
+
+    # --------------------------------------------------
+    # Node
+    # --------------------------------------------------
+
+    def _parse_node(
+        self,
+        line
+    ):
+
+        try:
+
+            node_id = line.split("[")[0].strip()
+
+            pos_match = re.search(
+                r'pos="([\d.]+),([\d.]+)"',
+                line
+            )
+
+            width_match = re.search(
+                r'width=([\d.]+)',
+                line
+            )
+
+            height_match = re.search(
+                r'height=([\d.]+)',
+                line
+            )
+
+            label_match = re.search(
+                r'label="([^"]+)"',
+                line
+            )
+
+            if not pos_match:
+                return None
+
+            x, y = map(
+                float,
+                pos_match.groups()
+            )
+
+            width = (
+                float(width_match.group(1))
+                if width_match
+                else 1
+            )
+
+            height = (
+                float(height_match.group(1))
+                if height_match
+                else 1
+            )
+
+            label = (
+                label_match.group(1)
+                if label_match
+                else node_id
+            )
+
+            return DiagramNode(
+                id=node_id,
+                label=label,
+                x=x,
+                y=y,
+                width=width,
+                height=height
+            )
+
+        except Exception:
+            return None
+
+    # --------------------------------------------------
+    # Edge
+    # --------------------------------------------------
+
+    def _parse_edge(
+        self,
+        line
+    ):
+
+        try:
+
+            source, rest = line.split(
+                "->",
+                1
+            )
+
+            target = rest.split("[")[0].strip()
+
+            points = []
+
+            pos_match = re.search(
+                r'pos="([^"]+)"',
+                line
+            )
+
+            if pos_match:
+
+                points = self._parse_spline(
+                    pos_match.group(1)
+                )
+
+            return DiagramEdge(
+                source=source.strip(),
+                target=target,
+                points=points
+            )
+
+        except Exception:
+            return None
+
+    def _parse_spline(
+        self,
+        pos
+    ):
+
+        result = []
+
+        pos = pos.replace("e,", "")
+        pos = pos.replace("s,", "")
+
+        coords = re.findall(
+            r'([\d.]+),([\d.]+)',
+            pos
+        )
+
+        for x, y in coords:
+
+            result.append(
+                Point(
+                    float(x),
+                    float(y)
+                )
+            )
+
+        return result
+
+    # --------------------------------------------------
+    # Cluster
+    # --------------------------------------------------
+
+    def _parse_cluster(
+        self,
+        line
+    ):
+
+        cluster_match = self.CLUSTER_RE.search(
+            line
+        )
+
+        if not cluster_match:
+            return None
+
+        cluster_id = cluster_match.group("id")
+
+        bbox_match = re.search(
+            r'bb="([\d.]+),([\d.]+),([\d.]+),([\d.]+)"',
+            line
+        )
+
+        if not bbox_match:
+            return None
+
+        x0, y0, x1, y1 = map(
+            float,
+            bbox_match.groups()
+        )
+
+        return DiagramContainer(
+            id=cluster_id,
+            label=cluster_id,
+            bbox=BoundingBox(
+                x=x0,
+                y=y0,
+                width=x1 - x0,
+                height=y1 - y0
+            )
+        )
+<<<<EOF>>>>
+======== File ./aws_icon_registry.py =========
 # aws_icon_registry.py
 
 from __future__ import annotations
@@ -5062,364 +6787,26 @@ class AwsIconRegistry:
         return len(
             self.preferred
         )
-<<<EOF>>>
-========File build_icon_registry.py=======
-from __future__ import annotations
-
-import argparse
-import json
-import re
-from pathlib import Path
-from collections import defaultdict
-
-
-ICON_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg"}
-
-
-# ============================================================
-# Manual Alias Definitions
-# ============================================================
-
-MANUAL_ALIASES = {
-    "EC2": [
-        "amazon ec2",
-        "elastic compute cloud",
-        "instance",
-    ],
-    "Lambda": [
-        "aws lambda",
-        "lambda function",
-    ],
-    "ECS": [
-        "amazon ecs",
-        "elastic container service",
-    ],
-    "EKS": [
-        "amazon eks",
-        "elastic kubernetes service",
-    ],
-    "S3": [
-        "amazon s3",
-        "simple storage service",
-        "bucket",
-    ],
-    "RDS": [
-        "amazon rds",
-        "relational database service",
-    ],
-    "Aurora": [
-        "amazon aurora",
-    ],
-    "DynamoDB": [
-        "amazon dynamodb",
-    ],
-    "ALB": [
-        "application load balancer",
-        "alb",
-    ],
-    "NLB": [
-        "network load balancer",
-        "nlb",
-    ],
-    "CloudFront": [
-        "cdn",
-    ],
-    "Route53": [
-        "route 53",
-        "dns",
-    ],
-    "VPC": [
-        "virtual private cloud",
-    ],
-    "API Gateway": [
-        "api gateway",
-    ],
-    "SQS": [
-        "queue",
-        "amazon sqs",
-    ],
-    "SNS": [
-        "notification service",
-        "amazon sns",
-    ],
-    "EventBridge": [
-        "event bus",
-    ],
-    "Redshift": [
-        "amazon redshift",
-    ],
-    "OpenSearch": [
-        "elasticsearch",
-        "amazon opensearch",
-    ],
-    "SageMaker": [
-        "amazon sagemaker",
-    ],
-}
-
-
-# ============================================================
-# Service Name Extraction
-# ============================================================
-
-SERVICE_PATTERNS = [
-    ("Amazon-EC2", "EC2"),
-    ("Amazon-Simple-Storage-Service", "S3"),
-    ("Amazon-DynamoDB", "DynamoDB"),
-    ("Amazon-Aurora", "Aurora"),
-    ("Amazon-RDS", "RDS"),
-    ("Amazon-Elastic-Container-Service", "ECS"),
-    ("Amazon-Elastic-Kubernetes-Service", "EKS"),
-    ("Amazon-VPC", "VPC"),
-    ("Amazon-CloudFront", "CloudFront"),
-    ("Amazon-Route-53", "Route53"),
-    ("Amazon-API-Gateway", "API Gateway"),
-    ("AWS-Lambda", "Lambda"),
-    ("Amazon-EventBridge", "EventBridge"),
-    ("Amazon-Simple-Queue-Service", "SQS"),
-    ("Amazon-Simple-Notification-Service", "SNS"),
-    ("Amazon-Redshift", "Redshift"),
-    ("Amazon-OpenSearch-Service", "OpenSearch"),
-    ("Amazon-SageMaker", "SageMaker"),
-]
-
-
-def extract_service_name(filename: str) -> str:
-
-    stem = Path(filename).stem
-
-    for pattern, service in SERVICE_PATTERNS:
-        if pattern in stem:
-            return service
-
-    stem = re.sub(r"^(Res_|Arch_)", "", stem)
-
-    stem = re.sub(
-        r"_(16|32|48|64|128)(@5x)?$",
-        "",
-        stem,
-    )
-
-    tokens = stem.split("_")
-
-    if not tokens:
-        return stem
-
-    return tokens[0]
-
-
-# ============================================================
-# Metadata Extraction
-# ============================================================
-
-def determine_icon_type(path: Path) -> str:
-
-    p = str(path)
-
-    if "Resource-Icons" in p:
-        return "resource"
-
-    if "Architecture-Service-Icons" in p:
-        return "service"
-
-    if "Architecture-Group-Icons" in p:
-        return "group"
-
-    return "unknown"
-
-
-def extract_category(path: Path) -> str:
-
-    for part in path.parts:
-
-        if part.startswith("Res_"):
-            return part
-
-        if part.startswith("Arch_"):
-            return part
-
-    return "Unknown"
-
-
-def extract_size(filename: str):
-
-    m = re.search(
-        r"_(16|24|32|48|64|128)",
-        filename,
-    )
-
-    if m:
-        return int(m.group(1))
-
-    return 0
-
-
-# ============================================================
-# Alias Generation
-# ============================================================
-
-def build_aliases(service: str):
-
-    aliases = {
-        service.lower(),
-        service.replace("-", " ").lower(),
-    }
-
-    aliases.update(
-        MANUAL_ALIASES.get(service, [])
-    )
-
-    return sorted(
-        {
-            a.lower().strip()
-            for a in aliases
-        }
-    )
-
-
-# ============================================================
-# Icon Ranking
-# ============================================================
-
-def score_icon(icon):
-
-    score = 0
-
-    if icon["icon_type"] == "resource":
-        score += 100
-
-    elif icon["icon_type"] == "service":
-        score += 50
-
-    elif icon["icon_type"] == "group":
-        score += 10
-
-    score += icon["size"]
-
-    return score
-
-
-# ============================================================
-# Catalog Builder
-# ============================================================
-
-class IconCatalogBuilder:
-
-    def __init__(self, icon_root):
-
-        self.icon_root = Path(icon_root)
-
-    def build(self):
-
-        services = defaultdict(list)
-
-        for file in self.icon_root.rglob("*"):
-
-            if not file.is_file():
-                continue
-
-            if file.suffix.lower() not in ICON_EXTENSIONS:
-                continue
-
-            service = extract_service_name(
-                file.name
-            )
-
-            icon = {
-                "service": service,
-                "path": str(
-                    file.relative_to(
-                        self.icon_root
-                    )
-                ),
-                "category": extract_category(
-                    file
-                ),
-                "icon_type": determine_icon_type(
-                    file
-                ),
-                "size": extract_size(
-                    file.name
-                ),
-            }
-
-            services[service].append(icon)
-
-        return services
-
-
-# ============================================================
-# Main
-# ============================================================
-
-def main():
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--icon-root",
-        required=True,
-    )
-
-    parser.add_argument(
-        "--output",
-        required=True,
-    )
-
-    args = parser.parse_args()
-
-    services = IconCatalogBuilder(
-        args.icon_root
-    ).build()
-
-    preferred = {}
-
-    alias_lookup = {}
-
-    for service, icons in services.items():
-
-        best = max(
-            icons,
-            key=score_icon,
-        )
-
-        aliases = build_aliases(
-            service
-        )
-
-        best["aliases"] = aliases
-
-        preferred[service] = best
-
-        for alias in aliases:
-            alias_lookup[alias] = service
-
-    catalog = {
-        "preferred": preferred,
-        "aliases": alias_lookup,
-    }
-
-    with open(
-        args.output,
-        "w",
-        encoding="utf-8",
-    ) as f:
-
-        json.dump(
-            catalog,
-            f,
-            indent=2,
-        )
-
-    print(
-        f"Generated catalog with "
-        f"{len(preferred)} services"
-    )
-
-
-if __name__ == "__main__":
-    main()<<<EOF>>>
-========File coordinate_normalizer.py=======
+<<<<EOF>>>>
+======== File ./test.py =========
+from pptx import Presentation
+from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+
+prs = Presentation()
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+slide.shapes.add_connector(
+    MSO_CONNECTOR.STRAIGHT,
+    1000000,
+    1000000,
+    4000000,
+    4000000
+)
+
+
+prs.save("test.pptx")<<<<EOF>>>>
+======== File ./coordinate_normalizer.py =========
 """
 coordinate_normalizer.py
 
@@ -5747,1442 +7134,4 @@ class CoordinateNormalizer:
             * scale
             + offset
         )
-<<<EOF>>>
-========File diagram_model.py=======
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional
-
-
-@dataclass
-class Point:
-    x: float
-    y: float
-
-
-@dataclass
-class BoundingBox:
-    x: float
-    y: float
-    width: float
-    height: float
-
-
-@dataclass
-class DiagramNode:
-    id: str
-    label: str
-
-    x: float
-    y: float
-
-    width: float
-    height: float
-
-    attrs: Dict = field(default_factory=dict)
-
-
-@dataclass
-class DiagramEdge:
-    source: str
-    target: str
-
-    points: List[Point] = field(default_factory=list)
-
-    attrs: Dict = field(default_factory=dict)
-
-
-@dataclass
-class DiagramContainer:
-    id: str
-    label: str
-
-    bbox: BoundingBox
-
-    attrs: Dict = field(default_factory=dict)
-
-
-@dataclass
-class DiagramModel:
-
-    width: float
-    height: float
-
-    nodes: List[DiagramNode] = field(default_factory=list)
-
-    edges: List[DiagramEdge] = field(default_factory=list)
-
-    containers: List[DiagramContainer] = field(default_factory=list)
-<<<EOF>>>
-========File diagram_renderer.py=======
-from PIL import Image
-from PIL import ImageDraw
-
-
-def render_png(
-    architecture,
-    positions,
-    output_file
-):
-    img = Image.new(
-        "RGB",
-        (1600, 900),
-        "white"
-    )
-
-    draw = ImageDraw.Draw(img)
-
-    for edge in architecture["edges"]:
-
-        s = positions[edge["source"]]
-        t = positions[edge["target"]]
-
-        draw.line(
-            (
-                s["x"] * 100,
-                s["y"] * 100,
-                t["x"] * 100,
-                t["y"] * 100
-            ),
-            fill="black",
-            width=3
-        )
-
-    img.save(output_file)
-<<<EOF>>>
-========File graph_builder.py=======
-"""
-graph_builder.py
-
-Architecture JSON
-    ->
-Layout Graph
-
-Responsibilities:
-- validate architecture
-- build adjacency maps
-- resolve containers
-- assign layers
-- detect disconnected components
-- prepare Graphviz input
-"""
-
-from __future__ import annotations
-
-from collections import defaultdict
-from typing import Dict, List, Set
-
-from aws_architecture_schema import (
-    Architecture,
-    Node,
-    Edge,
-    Container,
-)
-
-
-class LayoutGraph:
-    """
-    Internal graph representation.
-
-    Independent of Graphviz.
-    """
-
-    def __init__(self):
-
-        self.nodes: Dict[str, Node] = {}
-
-        self.edges: List[Edge] = []
-
-        self.containers: Dict[str, Container] = {}
-
-        self.adjacency = defaultdict(set)
-
-        self.reverse_adjacency = defaultdict(set)
-
-        self.layers: Dict[str, int] = {}
-
-        self.roots: Set[str] = set()
-
-
-class GraphBuilder:
-
-    def build(
-        self,
-        architecture: Architecture,
-    ) -> LayoutGraph:
-
-        graph = LayoutGraph()
-
-        self._load_nodes(
-            graph,
-            architecture.nodes
-        )
-
-        self._load_edges(
-            graph,
-            architecture.edges
-        )
-
-        self._load_containers(
-            graph,
-            architecture.containers
-        )
-
-        self._validate(graph)
-
-        self._compute_roots(graph)
-
-        self._assign_layers(graph)
-
-        return graph
-
-    # -------------------------------------------------
-
-    def _load_nodes(
-        self,
-        graph,
-        nodes
-    ):
-
-        for node in nodes:
-            graph.nodes[node.id] = node
-
-    def _load_edges(
-        self,
-        graph,
-        edges
-    ):
-
-        graph.edges.extend(edges)
-
-        for edge in edges:
-
-            graph.adjacency[
-                edge.source
-            ].add(edge.target)
-
-            graph.reverse_adjacency[
-                edge.target
-            ].add(edge.source)
-
-    def _load_containers(
-        self,
-        graph,
-        containers
-    ):
-
-        for c in containers:
-            graph.containers[c.id] = c
-
-    # -------------------------------------------------
-
-    def _validate(self, graph):
-
-        for edge in graph.edges:
-
-            if edge.source not in graph.nodes:
-                raise ValueError(
-                    f"Unknown source {edge.source}"
-                )
-
-            if edge.target not in graph.nodes:
-                raise ValueError(
-                    f"Unknown target {edge.target}"
-                )
-
-    # -------------------------------------------------
-
-    def _compute_roots(self, graph):
-
-        for node_id in graph.nodes:
-
-            if not graph.reverse_adjacency[node_id]:
-                graph.roots.add(node_id)
-
-    # -------------------------------------------------
-
-    def _assign_layers(self, graph):
-
-        visited = set()
-
-        queue = []
-
-        for root in graph.roots:
-
-            graph.layers[root] = 0
-
-            queue.append(root)
-
-        while queue:
-
-            current = queue.pop(0)
-
-            visited.add(current)
-
-            current_layer = graph.layers[current]
-
-            for child in graph.adjacency[current]:
-
-                graph.layers[child] = max(
-                    graph.layers.get(child, 0),
-                    current_layer + 1
-                )
-
-                if child not in visited:
-                    queue.append(child)
-<<<EOF>>>
-========File graphviz_cluster_generator.py=======
-"""
-graphviz_cluster_generator.py
-
-Production-grade AWS Graphviz cluster generator.
-
-Responsibilities:
-- Build nested Graphviz clusters
-- Render AWS hierarchy
-- Enforce AZ balancing
-- Apply AWS styles
-- Generate invisible alignment edges
-- Generate node definitions
-"""
-
-from __future__ import annotations
-
-from collections import defaultdict
-from typing import Dict, List
-
-from graphviz import Digraph
-
-from graph_builder import LayoutGraph
-
-
-# ==========================================================
-# AWS Styles
-# ==========================================================
-
-CONTAINER_STYLES = {
-    "region": {
-        "style": "rounded",
-        "color": "#6B7280",
-        "penwidth": "2",
-    },
-    "vpc": {
-        "style": "rounded",
-        "color": "#2563EB",
-        "penwidth": "2",
-    },
-    "availability_zone": {
-        "style": "rounded,dashed",
-        "color": "#9CA3AF",
-        "penwidth": "1.5",
-    },
-    "subnet": {
-        "style": "rounded,filled",
-        "fillcolor": "#F8FAFC",
-        "color": "#CBD5E1",
-        "penwidth": "1",
-    },
-}
-
-
-class GraphvizClusterGenerator:
-    """
-    Generates AWS hierarchy clusters.
-    """
-
-    def __init__(self, graph: LayoutGraph):
-
-        self.graph_data = graph
-
-        self.dot = Digraph(
-            "AWS",
-            graph_attr={
-                "compound": "true",
-                "newrank": "true",
-                "splines": "ortho",
-                "rankdir": "TB",
-                "nodesep": "0.8",
-                "ranksep": "1.2",
-                "pad": "0.4",
-            },
-        )
-
-        self.children = self._build_container_tree()
-
-    # ======================================================
-    # Public API
-    # ======================================================
-
-    def build(self) -> Digraph:
-
-        self._configure_graph()
-
-        roots = [
-            c
-            for c in self.graph_data.containers.values()
-            if c.parent_id is None
-        ]
-
-        for container in roots:
-            self._render_container(
-                container,
-                self.dot,
-            )
-
-        self._render_orphan_nodes()
-
-        self._render_edges()
-
-        self._create_layer_ranks()
-
-        return self.dot
-
-    # ======================================================
-    # Graph Config
-    # ======================================================
-
-    def _configure_graph(self):
-
-        self.dot.attr(
-            "node",
-            shape="box",
-            width="1.0",
-            height="1.0",
-            fixedsize="false",
-            fontsize="10",
-        )
-
-        self.dot.attr(
-            "edge",
-            arrowsize="0.8",
-            penwidth="1.2",
-        )
-
-    # ======================================================
-    # Container Tree
-    # ======================================================
-
-    def _build_container_tree(self):
-
-        tree = defaultdict(list)
-
-        for container in self.graph_data.containers.values():
-
-            if container.parent_id:
-                tree[container.parent_id].append(container)
-
-        return tree
-
-    # ======================================================
-    # Containers
-    # ======================================================
-
-    def _render_container(
-        self,
-        container,
-        parent_graph,
-    ):
-
-        cluster_name = f"cluster_{container.id}"
-
-        with parent_graph.subgraph(
-            name=cluster_name
-        ) as sub:
-
-            self._apply_style(
-                sub,
-                container.type,
-            )
-
-            sub.attr(
-                label=container.name,
-                fontsize="16",
-                fontname="Arial",
-            )
-
-            self._render_nodes(
-                sub,
-                container.id,
-            )
-
-            for child in self.children.get(
-                container.id,
-                [],
-            ):
-                self._render_container(
-                    child,
-                    sub,
-                )
-
-            self._align_children(
-                sub,
-                container.id,
-            )
-
-    # ======================================================
-    # Nodes
-    # ======================================================
-
-    def _render_nodes(
-        self,
-        graph,
-        container_id,
-    ):
-
-        for node in self.graph_data.nodes.values():
-
-            if node.container_id != container_id:
-                continue
-
-            graph.node(
-                node.id,
-                label=node.label,
-            )
-
-    def _render_orphan_nodes(self):
-
-        for node in self.graph_data.nodes.values():
-
-            if node.container_id:
-                continue
-
-            self.dot.node(
-                node.id,
-                label=node.label,
-            )
-
-    # ======================================================
-    # Styling
-    # ======================================================
-
-    def _apply_style(
-        self,
-        graph,
-        container_type,
-    ):
-
-        graph.attr(
-            **CONTAINER_STYLES.get(
-                container_type,
-                {}
-            )
-        )
-
-    # ======================================================
-    # Alignment
-    # ======================================================
-
-    def _align_children(
-        self,
-        graph,
-        container_id,
-    ):
-
-        children = self.children.get(
-            container_id,
-            [],
-        )
-
-        if len(children) < 2:
-            return
-
-        for left, right in zip(
-            children[:-1],
-            children[1:]
-        ):
-
-            anchor_a = f"align_{left.id}"
-            anchor_b = f"align_{right.id}"
-
-            graph.node(
-                anchor_a,
-                style="invis",
-                width="0",
-                height="0",
-            )
-
-            graph.node(
-                anchor_b,
-                style="invis",
-                width="0",
-                height="0",
-            )
-
-            graph.edge(
-                anchor_a,
-                anchor_b,
-                style="invis",
-                weight="100",
-            )
-
-    # ======================================================
-    # Layer Ranks
-    # ======================================================
-
-    def _create_layer_ranks(self):
-
-        grouped = defaultdict(list)
-
-        for node_id, layer in self.graph_data.layers.items():
-            grouped[layer].append(node_id)
-
-        for nodes in grouped.values():
-
-            with self.dot.subgraph() as rank:
-
-                rank.attr(rank="same")
-
-                for node_id in nodes:
-                    rank.node(node_id)
-
-    # ======================================================
-    # Edges
-    # ======================================================
-
-    def _render_edges(self):
-
-        for edge in self.graph_data.edges:
-
-            self.dot.edge(
-                edge.source,
-                edge.target,
-            )
-<<<EOF>>>
-========File graphviz_layout_engine.py=======
-"""
-graphviz_layout_engine.py
-
-Production Graphviz Layout Engine.
-
-Pipeline:
-
-Architecture
-    ->
-LayoutGraph
-    ->
-Graphviz DOT
-    ->
-XDOT
-    ->
-DiagramModel
-"""
-
-from __future__ import annotations
-
-import hashlib
-import json
-import subprocess
-from pathlib import Path
-
-from graph_builder import GraphBuilder
-from graphviz_cluster_generator import (
-    GraphvizClusterGenerator,
-)
-from graphviz_xdot_parser import (
-    GraphvizXDotParser,
-)
-
-from aws_architecture_schema import (
-    Architecture,
-)
-
-from diagram_model import (
-    DiagramModel,
-)
-
-
-class GraphvizLayoutEngine:
-
-    def __init__(
-        self,
-        cache_dir: str | Path = ".layout_cache",
-    ):
-
-        self.builder = GraphBuilder()
-
-        self.parser = GraphvizXDotParser()
-
-        self.cache_dir = Path(cache_dir)
-
-        self.cache_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-    # ======================================================
-    # Public API
-    # ======================================================
-
-    def layout(
-        self,
-        architecture: Architecture,
-    ) -> DiagramModel:
-
-        cache_key = self._compute_hash(
-            architecture
-        )
-
-        cached = self._load_cache(
-            cache_key
-        )
-
-        if cached:
-            return cached
-
-        layout_graph = self.builder.build(
-            architecture
-        )
-
-        dot_graph = (
-            GraphvizClusterGenerator(
-                layout_graph
-            ).build()
-        )
-
-        xdot = self._render_xdot(
-            dot_graph
-        )
-
-        diagram = self.parser.parse(
-            xdot
-        )
-
-        self._save_cache(
-            cache_key,
-            xdot,
-        )
-
-        return diagram
-
-    # ======================================================
-    # XDOT Rendering
-    # ======================================================
-
-    def _render_xdot(
-        self,
-        dot_graph,
-    ) -> str:
-
-        process = subprocess.run(
-            [
-                "dot",
-                "-Txdot",
-            ],
-            input=dot_graph.source,
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-
-        return process.stdout
-
-    # ======================================================
-    # Cache
-    # ======================================================
-
-    def _compute_hash(
-        self,
-        architecture,
-    ):
-
-        payload = json.dumps(
-            architecture.model_dump(),
-            sort_keys=True,
-        )
-
-        return hashlib.sha256(
-            payload.encode()
-        ).hexdigest()
-
-    def _cache_file(
-        self,
-        cache_key,
-    ):
-
-        return (
-            self.cache_dir
-            / f"{cache_key}.xdot"
-        )
-
-    def _save_cache(
-        self,
-        cache_key,
-        xdot,
-    ):
-
-        self._cache_file(
-            cache_key
-        ).write_text(
-            xdot,
-            encoding="utf-8",
-        )
-
-    def _load_cache(
-        self,
-        cache_key,
-    ):
-
-        file = self._cache_file(
-            cache_key
-        )
-
-        if not file.exists():
-            return None
-
-        return self.parser.parse(
-            file.read_text(
-                encoding="utf-8"
-            )
-        )
-
-    # ======================================================
-    # Debug
-    # ======================================================
-
-    def export_dot(
-        self,
-        architecture,
-        output_file,
-    ):
-
-        graph = self.builder.build(
-            architecture
-        )
-
-        dot = (
-            GraphvizClusterGenerator(
-                graph
-            ).build()
-        )
-
-        Path(output_file).write_text(
-            dot.source,
-            encoding="utf-8",
-        )
-
-    def export_xdot(
-        self,
-        architecture,
-        output_file,
-    ):
-
-        graph = self.builder.build(
-            architecture
-        )
-
-        dot = (
-            GraphvizClusterGenerator(
-                graph
-            ).build()
-        )
-
-        xdot = self._render_xdot(
-            dot
-        )
-
-        Path(output_file).write_text(
-            xdot,
-            encoding="utf-8",
-        )
-<<<EOF>>>
-========File graphviz_layout_runner.py=======
-import subprocess
-
-
-class GraphvizLayoutRunner:
-
-    def generate_xdot(
-        self,
-        dot_string: str
-    ) -> str:
-
-        result = subprocess.run(
-            ["dot", "-Txdot"],
-            input=dot_string,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-
-        return result.stdout
-<<<EOF>>>
-========File graphviz_xdot_parser.py=======
-import re
-
-from diagram_model import (
-    DiagramModel,
-    DiagramNode,
-    DiagramEdge,
-    DiagramContainer,
-    BoundingBox,
-    Point
-)
-
-
-class GraphvizXDotParser:
-    """
-    Parses Graphviz XDOT output.
-
-    Extracts:
-
-    - graph size
-    - node positions
-    - node sizes
-    - edge splines
-    - cluster bounding boxes
-    """
-
-    CLUSTER_RE = re.compile(
-        r'cluster_(?P<id>[^ ]+)'
-    )
-
-    def parse(
-        self,
-        xdot_data: str
-    ) -> DiagramModel:
-
-        width = 0
-        height = 0
-
-        nodes = []
-        edges = []
-        containers = []
-
-        graph_bbox = self._extract_graph_bbox(
-            xdot_data
-        )
-
-        if graph_bbox:
-            width = graph_bbox[2]
-            height = graph_bbox[3]
-
-        lines = xdot_data.splitlines()
-
-        current_cluster = None
-
-        for line in lines:
-
-            line = line.strip()
-
-            if "subgraph cluster_" in line:
-
-                cluster = self._parse_cluster(
-                    line
-                )
-
-                if cluster:
-                    containers.append(cluster)
-
-            elif "pos=" in line and "->" not in line:
-
-                node = self._parse_node(line)
-
-                if node:
-                    nodes.append(node)
-
-            elif "->" in line:
-
-                edge = self._parse_edge(line)
-
-                if edge:
-                    edges.append(edge)
-
-        return DiagramModel(
-            width=width,
-            height=height,
-            nodes=nodes,
-            edges=edges,
-            containers=containers
-        )
-
-    # --------------------------------------------------
-    # Graph
-    # --------------------------------------------------
-
-    def _extract_graph_bbox(
-        self,
-        xdot
-    ):
-
-        match = re.search(
-            r'bb="([\d.]+),([\d.]+),([\d.]+),([\d.]+)"',
-            xdot
-        )
-
-        if not match:
-            return None
-
-        x0, y0, x1, y1 = map(
-            float,
-            match.groups()
-        )
-
-        return (
-            x0,
-            y0,
-            x1 - x0,
-            y1 - y0
-        )
-
-    # --------------------------------------------------
-    # Node
-    # --------------------------------------------------
-
-    def _parse_node(
-        self,
-        line
-    ):
-
-        try:
-
-            node_id = line.split("[")[0].strip()
-
-            pos_match = re.search(
-                r'pos="([\d.]+),([\d.]+)"',
-                line
-            )
-
-            width_match = re.search(
-                r'width=([\d.]+)',
-                line
-            )
-
-            height_match = re.search(
-                r'height=([\d.]+)',
-                line
-            )
-
-            label_match = re.search(
-                r'label="([^"]+)"',
-                line
-            )
-
-            if not pos_match:
-                return None
-
-            x, y = map(
-                float,
-                pos_match.groups()
-            )
-
-            width = (
-                float(width_match.group(1))
-                if width_match
-                else 1
-            )
-
-            height = (
-                float(height_match.group(1))
-                if height_match
-                else 1
-            )
-
-            label = (
-                label_match.group(1)
-                if label_match
-                else node_id
-            )
-
-            return DiagramNode(
-                id=node_id,
-                label=label,
-                x=x,
-                y=y,
-                width=width,
-                height=height
-            )
-
-        except Exception:
-            return None
-
-    # --------------------------------------------------
-    # Edge
-    # --------------------------------------------------
-
-    def _parse_edge(
-        self,
-        line
-    ):
-
-        try:
-
-            source, rest = line.split(
-                "->",
-                1
-            )
-
-            target = rest.split("[")[0].strip()
-
-            points = []
-
-            pos_match = re.search(
-                r'pos="([^"]+)"',
-                line
-            )
-
-            if pos_match:
-
-                points = self._parse_spline(
-                    pos_match.group(1)
-                )
-
-            return DiagramEdge(
-                source=source.strip(),
-                target=target,
-                points=points
-            )
-
-        except Exception:
-            return None
-
-    def _parse_spline(
-        self,
-        pos
-    ):
-
-        result = []
-
-        pos = pos.replace("e,", "")
-        pos = pos.replace("s,", "")
-
-        coords = re.findall(
-            r'([\d.]+),([\d.]+)',
-            pos
-        )
-
-        for x, y in coords:
-
-            result.append(
-                Point(
-                    float(x),
-                    float(y)
-                )
-            )
-
-        return result
-
-    # --------------------------------------------------
-    # Cluster
-    # --------------------------------------------------
-
-    def _parse_cluster(
-        self,
-        line
-    ):
-
-        cluster_match = self.CLUSTER_RE.search(
-            line
-        )
-
-        if not cluster_match:
-            return None
-
-        cluster_id = cluster_match.group("id")
-
-        bbox_match = re.search(
-            r'bb="([\d.]+),([\d.]+),([\d.]+),([\d.]+)"',
-            line
-        )
-
-        if not bbox_match:
-            return None
-
-        x0, y0, x1, y1 = map(
-            float,
-            bbox_match.groups()
-        )
-
-        return DiagramContainer(
-            id=cluster_id,
-            label=cluster_id,
-            bbox=BoundingBox(
-                x=x0,
-                y=y0,
-                width=x1 - x0,
-                height=y1 - y0
-            )
-        )
-<<<EOF>>>
-========File layout_engine.py=======
-from collections import defaultdict
-import networkx as nx
-
-
-def calculate_positions(architecture):
-    """
-    Calculate node positions using Graphviz.
-    
-    Returns:
-        {
-            "node_id": {
-                "x": float,
-                "y": float
-            }
-        }
-    """
-
-    G = nx.DiGraph()
-
-    # Add nodes
-    for node in architecture["nodes"]:
-        G.add_node(node["id"])
-
-    # Add edges
-    for edge in architecture["edges"]:
-        G.add_edge(
-            edge["source"],
-            edge["target"]
-        )
-
-    try:
-        from networkx.drawing.nx_agraph import graphviz_layout
-
-        pos = graphviz_layout(
-            G,
-            prog="dot"
-        )
-
-    except Exception:
-        # Fallback if graphviz unavailable
-        pos = nx.spring_layout(
-            G,
-            seed=42
-        )
-
-    # Normalize coordinates
-    positions = {}
-
-    xs = [v[0] for v in pos.values()]
-    ys = [v[1] for v in pos.values()]
-
-    min_x = min(xs)
-    min_y = min(ys)
-
-    scale = 100.0
-
-    for node_id, (x, y) in pos.items():
-
-        positions[node_id] = {
-            "x": ((x - min_x) / scale) + 1,
-            "y": ((y - min_y) / scale) + 1
-        }
-
-    return positions
-<<<EOF>>>
-========File layout_pipeline.py=======
-from graphviz_layout_runner import (
-    GraphvizLayoutRunner
-)
-
-from graphviz_xdot_parser import (
-    GraphvizXDotParser
-)
-
-from coordinate_normalizer import (
-    CoordinateNormalizer
-)
-
-
-class LayoutPipeline:
-
-    def run(
-        self,
-        dot_source: str
-    ):
-
-        xdot = (
-            GraphvizLayoutRunner()
-            .generate_xdot(dot_source)
-        )
-
-        diagram = (
-            GraphvizXDotParser()
-            .parse(xdot)
-        )
-
-        diagram = (
-            CoordinateNormalizer()
-            .normalize(diagram)
-        )
-
-        return diagram
-<<<EOF>>>
-========File main.py=======
-import json
-
-from layout_engine import calculate_positions
-from ppt_generator import build_ppt
-from diagram_renderer import render_png
-from aws_icon_mapper import get_icon
-
-
-with open("architecture.json") as f:
-    architecture = json.load(f)
-
-positions = calculate_positions(
-    architecture
-)
-
-render_png(
-    architecture,
-    positions,
-    "outputs/architecture.png"
-)
-
-build_ppt(
-    architecture,
-    positions,
-    lambda svc: get_icon(
-        svc,
-        "/workspace/shared/aws_icons"
-    ),
-    "outputs/final.pptx"
-)
-<<<EOF>>>
-========File ppt_generator.py=======
-from pptx import Presentation
-from pptx.util import Inches
-from pptx.enum.shapes import MSO_CONNECTOR
-from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
-
-
-ICON_SIZE = 0.8
-
-
-def build_ppt(
-    architecture,
-    positions,
-    icon_mapper,
-    output_file
-):
-    prs = Presentation()
-
-    slide = prs.slides.add_slide(
-        prs.slide_layouts[6]
-    )
-
-    node_shapes = {}
-
-    # ------------------------------------------------
-    # Draw containers first
-    # ------------------------------------------------
-
-    for container in architecture.get(
-        "containers",
-        []
-    ):
-
-        nodes = container["children"]
-
-        xs = []
-        ys = []
-
-        for node_id in nodes:
-
-            pos = positions[node_id]
-
-            xs.append(pos["x"])
-            ys.append(pos["y"])
-
-        left = min(xs) - 0.5
-        top = min(ys) - 0.5
-
-        width = (
-            max(xs) - min(xs)
-        ) + 2.0
-
-        height = (
-            max(ys) - min(ys)
-        ) + 2.0
-
-        box = slide.shapes.add_shape(
-            MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
-            Inches(left),
-            Inches(top),
-            Inches(width),
-            Inches(height)
-        )
-
-        box.text = container["name"]
-
-    # ------------------------------------------------
-    # Draw nodes
-    # ------------------------------------------------
-
-    for node in architecture["nodes"]:
-
-        pos = positions[node["id"]]
-
-        icon = icon_mapper(
-            node["service"]
-        )
-
-        if icon:
-
-            picture = slide.shapes.add_picture(
-                str(icon),
-                Inches(pos["x"]),
-                Inches(pos["y"]),
-                width=Inches(ICON_SIZE)
-            )
-
-            node_shapes[node["id"]] = picture
-
-        textbox = slide.shapes.add_textbox(
-            Inches(pos["x"] - 0.3),
-            Inches(pos["y"] + 0.8),
-            Inches(2),
-            Inches(0.3)
-        )
-
-        textbox.text = node["label"]
-
-    # ------------------------------------------------
-    # Draw edges
-    # ------------------------------------------------
-
-    for edge in architecture["edges"]:
-    
-        src = node_shapes.get(edge["source"])
-        dst = node_shapes.get(edge["target"])
-    
-        if src is None or dst is None:
-            print(f"Skipping edge {edge}")
-            continue
-    
-        x1 = int(src.left + src.width / 2)
-        y1 = int(src.top + src.height / 2)
-    
-        x2 = int(dst.left + dst.width / 2)
-        y2 = int(dst.top + dst.height / 2)
-    
-        try:
-            slide.shapes.add_connector(
-                MSO_CONNECTOR.STRAIGHT,
-                x1,
-                y1,
-                x2,
-                y2
-            )
-        except Exception as e:
-            print(f"Failed edge {edge}: {e}")
-
-    prs.save(output_file)
-<<<EOF>>>
-========File test.py=======
-from pptx import Presentation
-from pptx.enum.shapes import MSO_CONNECTOR
-from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
-
-prs = Presentation()
-slide = prs.slides.add_slide(prs.slide_layouts[6])
-
-slide.shapes.add_connector(
-    MSO_CONNECTOR.STRAIGHT,
-    1000000,
-    1000000,
-    4000000,
-    4000000
-)
-
-
-prs.save("test.pptx")<<<EOF>>>
+<<<<EOF>>>>
