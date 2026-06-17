@@ -1,0 +1,281 @@
+{
+  "title": "Active-Active Multi-Region EKS Application with MSK and Aurora",
+  "description": "Reference AWS architecture for EKS-hosted application with active-active DR across us-east-1 and us-west-2, using Amazon MSK and Aurora PostgreSQL with cross-region replication",
+
+  "containers": [
+    {
+      "id": "global",
+      "name": "Global",
+      "type": "global",
+      "parent_id": null
+    },
+    {
+      "id": "region1",
+      "name": "us-east-1",
+      "type": "region",
+      "parent_id": "global"
+    },
+    {
+      "id": "region2",
+      "name": "us-west-2",
+      "type": "region",
+      "parent_id": "global"
+    },
+    {
+      "id": "vpc1",
+      "name": "Production VPC (us-east-1)",
+      "type": "vpc",
+      "parent_id": "region1"
+    },
+    {
+      "id": "vpc2",
+      "name": "Production VPC (us-west-2)",
+      "type": "vpc",
+      "parent_id": "region2"
+    },
+    {
+      "id": "az1a",
+      "name": "us-east-1a",
+      "type": "availability_zone",
+      "parent_id": "vpc1"
+    },
+    {
+      "id": "az1b",
+      "name": "us-east-1b",
+      "type": "availability_zone",
+      "parent_id": "vpc1"
+    },
+    {
+      "id": "az2a",
+      "name": "us-west-2a",
+      "type": "availability_zone",
+      "parent_id": "vpc2"
+    },
+    {
+      "id": "az2b",
+      "name": "us-west-2b",
+      "type": "availability_zone",
+      "parent_id": "vpc2"
+    },
+    {
+      "id": "public_1a",
+      "name": "Public Subnet 1a",
+      "type": "subnet",
+      "parent_id": "az1a"
+    },
+    {
+      "id": "private_1a",
+      "name": "Private Subnet 1a",
+      "type": "subnet",
+      "parent_id": "az1a"
+    },
+    {
+      "id": "public_1b",
+      "name": "Public Subnet 1b",
+      "type": "subnet",
+      "parent_id": "az1b"
+    },
+    {
+      "id": "private_1b",
+      "name": "Private Subnet 1b",
+      "type": "subnet",
+      "parent_id": "az1b"
+    },
+    {
+      "id": "public_2a",
+      "name": "Public Subnet 2a",
+      "type": "subnet",
+      "parent_id": "az2a"
+    },
+    {
+      "id": "private_2a",
+      "name": "Private Subnet 2a",
+      "type": "subnet",
+      "parent_id": "az2a"
+    },
+    {
+      "id": "public_2b",
+      "name": "Public Subnet 2b",
+      "type": "subnet",
+      "parent_id": "az2b"
+    },
+    {
+      "id": "private_2b",
+      "name": "Private Subnet 2b",
+      "type": "subnet",
+      "parent_id": "az2b"
+    }
+  ],
+
+  "nodes": [
+    {
+      "id": "global_accelerator",
+      "label": "Global Accelerator",
+      "service": "GlobalAccelerator",
+      "container_id": "global",
+      "layer": 0
+    },
+    {
+      "id": "alb1",
+      "label": "ALB (us-east-1)",
+      "service": "ALB",
+      "container_id": "public_1a",
+      "layer": 1
+    },
+    {
+      "id": "alb2",
+      "label": "ALB (us-west-2)",
+      "service": "ALB",
+      "container_id": "public_2a",
+      "layer": 1
+    },
+    {
+      "id": "eks1",
+      "label": "EKS Cluster (us-east-1)",
+      "service": "EKS",
+      "container_id": "private_1a",
+      "layer": 2
+    },
+    {
+      "id": "eks2",
+      "label": "EKS Cluster (us-west-2)",
+      "service": "EKS",
+      "container_id": "private_2a",
+      "layer": 2
+    },
+    {
+      "id": "app_pods1",
+      "label": "Application Pods (us-east-1)",
+      "service": "EKS_Pods",
+      "container_id": "private_1a",
+      "layer": 3
+    },
+    {
+      "id": "app_pods2",
+      "label": "Application Pods (us-west-2)",
+      "service": "EKS_Pods",
+      "container_id": "private_2a",
+      "layer": 3
+    },
+    {
+      "id": "pgbouncer1",
+      "label": "PgBouncer (us-east-1)",
+      "service": "PgBouncer",
+      "container_id": "private_1a",
+      "layer": 4
+    },
+    {
+      "id": "pgbouncer2",
+      "label": "PgBouncer (us-west-2)",
+      "service": "PgBouncer",
+      "container_id": "private_2a",
+      "layer": 4
+    },
+    {
+      "id": "msk1",
+      "label": "MSK Cluster (us-east-1)",
+      "service": "MSK",
+      "container_id": "private_1a",
+      "layer": 4
+    },
+    {
+      "id": "msk2",
+      "label": "MSK Cluster (us-west-2)",
+      "service": "MSK",
+      "container_id": "private_2a",
+      "layer": 4
+    },
+    {
+      "id": "aurora_primary",
+      "label": "Aurora Primary (us-east-1)",
+      "service": "Aurora",
+      "container_id": "private_1a",
+      "layer": 5
+    },
+    {
+      "id": "aurora_secondary",
+      "label": "Aurora Secondary (us-west-2)",
+      "service": "Aurora",
+      "container_id": "private_2a",
+      "layer": 5
+    },
+    {
+      "id": "msk_replicator",
+      "label": "MSK Replicator",
+      "service": "MSK_Replicator",
+      "container_id": "global",
+      "layer": 4
+    }
+  ],
+
+  "edges": [
+    {
+      "source": "global_accelerator",
+      "target": "alb1"
+    },
+    {
+      "source": "global_accelerator",
+      "target": "alb2"
+    },
+    {
+      "source": "alb1",
+      "target": "app_pods1"
+    },
+    {
+      "source": "alb2",
+      "target": "app_pods2"
+    },
+    {
+      "source": "app_pods1",
+      "target": "pgbouncer1"
+    },
+    {
+      "source": "app_pods2",
+      "target": "pgbouncer2"
+    },
+    {
+      "source": "pgbouncer1",
+      "target": "aurora_primary"
+    },
+    {
+      "source": "pgbouncer1",
+      "target": "aurora_secondary"
+    },
+    {
+      "source": "pgbouncer2",
+      "target": "aurora_primary"
+    },
+    {
+      "source": "pgbouncer2",
+      "target": "aurora_secondary"
+    },
+    {
+      "source": "app_pods1",
+      "target": "msk1"
+    },
+    {
+      "source": "app_pods2",
+      "target": "msk2"
+    },
+    {
+      "source": "aurora_primary",
+      "target": "aurora_secondary"
+    },
+    {
+      "source": "msk1",
+      "target": "msk_replicator"
+    },
+    {
+      "source": "msk2",
+      "target": "msk_replicator"
+    },
+    {
+      "source": "msk_replicator",
+      "target": "msk1"
+    },
+    {
+      "source": "msk_replicator",
+      "target": "msk2"
+    }
+  ]
+}

@@ -280,15 +280,33 @@ class GraphvizXDotParser:
 
         try:
 
+            # Skip invisible structural edges (layer-alignment
+            # anchors and similar Graphviz layout helpers). These
+            # are never meant to be drawn, but were previously
+            # leaking through as real diagram edges.
+            if "invis" in stmt:
+                return None
+
             source, rest = stmt.split(
                 "->",
                 1
             )
 
+            source = source.strip()
+
             target = (
                 rest.split("[")[0]
                 .strip()
             )
+
+            # Skip edges touching Graphviz helper/anchor nodes
+            if (
+                source.startswith("layer_")
+                or target.startswith("layer_")
+                or source.startswith("align_")
+                or target.startswith("align_")
+            ):
+                return None
 
             points = []
 
@@ -304,7 +322,7 @@ class GraphvizXDotParser:
                 )
 
             return DiagramEdge(
-                source=source.strip(),
+                source=source,
                 target=target,
                 points=points
             )
@@ -318,22 +336,72 @@ class GraphvizXDotParser:
         pos
     ):
 
-        result = []
+        # xdot "pos" strings look like:
+        #   "e,ex,ey x1,y1 x2,y2 ... xn,yn"
+        # or, for edges with a start arrowhead too:
+        #   "s,sx,sy e,ex,ey x1,y1 ... xn,yn"
+        #
+        # The "s," / "e," markers are the true clipped
+        # start/end coordinates of the arrow, and they are
+        # written at the FRONT of the string regardless of
+        # where they belong on the actual curve. The previous
+        # implementation just stripped the "s,"/"e," prefixes
+        # in place, which left the end-point coordinate sitting
+        # at the START of the resulting point list -- producing
+        # zig-zagging connectors that double back across the
+        # diagram instead of a clean line from source to target.
+        #
+        # Here we extract them explicitly and place the start
+        # point first and the end point last.
 
-        pos = pos.replace(
-            "e,",
-            ""
+        start_point = None
+        end_point = None
+
+        s_match = re.search(
+            r's,([\d.]+),([\d.]+)',
+            pos
         )
 
-        pos = pos.replace(
-            "s,",
-            ""
+        if s_match:
+
+            start_point = Point(
+                float(s_match.group(1)),
+                float(s_match.group(2)),
+            )
+
+            pos = pos.replace(
+                s_match.group(0),
+                "",
+                1
+            )
+
+        e_match = re.search(
+            r'e,([\d.]+),([\d.]+)',
+            pos
         )
+
+        if e_match:
+
+            end_point = Point(
+                float(e_match.group(1)),
+                float(e_match.group(2)),
+            )
+
+            pos = pos.replace(
+                e_match.group(0),
+                "",
+                1
+            )
 
         coords = re.findall(
             r'([\d.]+),([\d.]+)',
             pos
         )
+
+        result = []
+
+        if start_point:
+            result.append(start_point)
 
         for x, y in coords:
 
@@ -343,6 +411,9 @@ class GraphvizXDotParser:
                     float(y)
                 )
             )
+
+        if end_point:
+            result.append(end_point)
 
         return result
 

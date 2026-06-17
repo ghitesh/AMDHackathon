@@ -8,7 +8,12 @@ from pptx.enum.shapes import (
     MSO_AUTO_SHAPE_TYPE,
     MSO_CONNECTOR,
 )
+from pptx.enum.text import (
+    MSO_ANCHOR,
+    PP_ALIGN,
+)
 from pptx.dml.color import RGBColor
+from pptx.util import Pt, Emu
 
 
 class PowerPointRenderer:
@@ -77,8 +82,6 @@ class PowerPointRenderer:
                 int(bbox.height),
             )
 
-            shape.text = container.label
-
             shape.fill.background()
 
             shape.line.color.rgb = RGBColor(
@@ -88,6 +91,62 @@ class PowerPointRenderer:
             )
 
             shape.line.width = 12700
+
+            # PowerPoint's default rounded-rectangle corner radius
+            # is a fixed fraction (~1/6) of the shorter side. For
+            # large containers that radius becomes huge in absolute
+            # terms and can visually clip a node sitting near a
+            # corner. AWS reference diagrams also use a much
+            # subtler corner radius than PowerPoint's default.
+            try:
+                shape.adjustments[0] = 0.04
+            except Exception:
+                pass
+
+            self._render_container_label(
+                shape,
+                container,
+            )
+
+    def _render_container_label(
+        self,
+        shape,
+        container,
+    ):
+
+        # AWS-style group labels live in the top-left corner
+        # of the box. python-pptx defaults to vertically and
+        # horizontally centered text, which is what caused
+        # nested container labels (region / vpc / az / subnet)
+        # to all pile up near the same point and overlap with
+        # the node icons sitting on top of them.
+
+        text_frame = shape.text_frame
+
+        text_frame.text = container.label
+
+        text_frame.word_wrap = True
+
+        text_frame.vertical_anchor = MSO_ANCHOR.TOP
+
+        text_frame.margin_left = Emu(91440)
+        text_frame.margin_top = Emu(45720)
+        text_frame.margin_right = Emu(0)
+        text_frame.margin_bottom = Emu(0)
+
+        paragraph = text_frame.paragraphs[0]
+
+        paragraph.alignment = PP_ALIGN.LEFT
+
+        for run in paragraph.runs:
+
+            run.font.size = Pt(10)
+
+            run.font.color.rgb = RGBColor(
+                107,
+                114,
+                128,
+            )
 
     # =====================================================
     # Nodes
@@ -157,6 +216,17 @@ class PowerPointRenderer:
                 node,
             )
 
+    def normalize_service_name(self, name: Optional[str]) -> str:
+        name = name.lower().strip()
+
+        if name in {"alb", "application load balancer", "application-load-balancer"}:
+            return "ALB"
+
+        if name in {"nlb", "network load balancer"}:
+            return "NLB"
+
+        return name.upper()
+
     def _resolve_icon(
         self,
         service: Optional[str],
@@ -167,11 +237,13 @@ class PowerPointRenderer:
             or not self.icon_registry
         ):
             print(
-                "ppt_generator.py:147 missing service or registry:",
+                "ppt_generator.py:229 missing service or registry:",
                 service
             )
             return None
-    
+
+        service = self.normalize_service_name(service)
+
         try:
     
             path = self.icon_registry.get_icon(

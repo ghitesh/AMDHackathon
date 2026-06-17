@@ -50,6 +50,8 @@ MANUAL_ALIASES = {
     "ALB": [
         "application load balancer",
         "alb",
+        "elastic load balancer",
+        "application-load-balancer",
     ],
     "NLB": [
         "network load balancer",
@@ -115,6 +117,8 @@ SERVICE_PATTERNS = [
     ("Amazon-Redshift", "Redshift"),
     ("Amazon-OpenSearch-Service", "OpenSearch"),
     ("Amazon-SageMaker", "SageMaker"),
+    ("Application-Load-Balancer", "ALB"),
+    ("Elastic-Load-Balancing", "ALB"),
 ]
 
 

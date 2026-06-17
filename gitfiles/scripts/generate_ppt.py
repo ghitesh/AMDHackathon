@@ -92,8 +92,8 @@ def generate_ppt(
     
     icon_registry = AwsIconRegistry(
         catalog_path = "aws_icon_catalog.json",
-        icon_root = "/workspace/shared/aws_icons"
-        #icon_root = r"C:\\Users\\ghitesh\\Downloads\\Icon-package"
+        #icon_root = "/workspace/shared/aws_icons"
+        icon_root = r"C:\\Users\\ghitesh\\Downloads\\Icon-package"
     )
 
     renderer = PowerPointRenderer(

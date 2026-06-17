@@ -31,22 +31,30 @@ CONTAINER_STYLES = {
         "style": "rounded",
         "color": "#6B7280",
         "penwidth": "2",
+        "margin": "24",
     },
     "vpc": {
         "style": "rounded",
         "color": "#2563EB",
         "penwidth": "2",
+        "margin": "24",
     },
     "availability_zone": {
         "style": "rounded,dashed",
         "color": "#9CA3AF",
         "penwidth": "1.5",
+        "margin": "24",
     },
     "subnet": {
         "style": "rounded,filled",
         "fillcolor": "#F8FAFC",
         "color": "#CBD5E1",
         "penwidth": "1",
+        # Subnet clusters wrap a single icon tightly, with the
+        # least natural breathing room of any nesting level --
+        # this is what was causing the contained ECS icon to sit
+        # on top of (and hide most of) its own subnet's label.
+        "margin": "30",
     },
 }
 
@@ -183,10 +191,10 @@ class GraphvizClusterGenerator:
                     sub,
                 )
 
-            self._align_children(
-                sub,
-                container.id,
-            )
+            # self._align_children(
+            #     sub,
+            #     container.id,
+            # )
 
     # ======================================================
     # Nodes
