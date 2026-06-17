@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
+from pydantic import TypeAdapter
 
 @dataclass
 class Container:
@@ -12,6 +13,13 @@ class Container:
     subnet: Optional[str] = None
     parent_id: Optional[str] = None
 
+    @classmethod
+    def model_json_schema(cls):
+        """Generates a JSON schema for the Architecture class."""
+        # We use TypeAdapter to generate the schema from the dataclass structure
+        adapter = TypeAdapter(cls)
+        return adapter.json_schema()
+
 @dataclass
 class Node:
     id: str
@@ -19,6 +27,13 @@ class Node:
     service: str
     container_id: Optional[str] = None
     layer: int = 0
+
+    @classmethod
+    def model_json_schema(cls):
+        """Generates a JSON schema for the Architecture class."""
+        # We use TypeAdapter to generate the schema from the dataclass structure
+        adapter = TypeAdapter(cls)
+        return adapter.json_schema()
 
 
 @dataclass
@@ -38,20 +53,17 @@ class Architecture:
 
     @classmethod
     def model_validate(cls, data):
-
         return cls(
             title=data.get("title", ""),
             description=data.get("description", ""),
-            nodes=[
-                Node(**n)
-                for n in data.get("nodes", [])
-            ],
-            edges=[
-                Edge(**e)
-                for e in data.get("edges", [])
-            ],
-            containers=[
-                Container(**c)
-                for c in data.get("containers", [])
-            ]
+            nodes=[Node(**n) for n in data.get("nodes", [])],
+            edges=[Edge(**e) for e in data.get("edges", [])],
+            containers=[Container(**c) for c in data.get("containers", [])]
         )
+
+    @classmethod
+    def model_json_schema(cls):
+        """Generates a JSON schema for the Architecture class."""
+        # We use TypeAdapter to generate the schema from the dataclass structure
+        adapter = TypeAdapter(cls)
+        return adapter.json_schema()

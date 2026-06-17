@@ -92,8 +92,8 @@ def generate_ppt(
     
     icon_registry = AwsIconRegistry(
         catalog_path = "aws_icon_catalog.json",
-        #icon_root = "/workspace/shared/aws_icons"
-        icon_root = r"C:\\Users\\ghitesh\\Downloads\\Icon-package"
+        icon_root = "/workspace/shared/aws_icons"
+        #icon_root = r"C:\\Users\\ghitesh\\Downloads\\Icon-package"
     )
 
     renderer = PowerPointRenderer(
@@ -126,6 +126,25 @@ def parse_args():
 
     return parser.parse_args()
 
+def call_generate_ppt(inputfile,outputfile):
+
+
+    with open(inputfile, "r", encoding="utf-8") as f:
+
+        architecture = (
+            Architecture.model_validate(
+                json.load(f)
+            )
+        )
+
+    generate_ppt(
+        architecture=architecture,
+        output_file=outputfile,
+    )
+
+    print(
+        f"PPT generated: {outputfile}"
+    )
 
 def main():
 
